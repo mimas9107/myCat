@@ -65,5 +65,3 @@
   狀態機實際上只剩 `open↔blink` 切換與眼球追蹤。debug log 中所有 `pack.yawn=False`、`pack.sleep=False` 等條件檢查直接顯示素材缺失。
 * **解法**：
   建立 debug logging 系統（`_fsm_debug_tick`）每3秒輸出完整條件檢查，確認是素材問題而非邏輯 bug。後續可透過更換有完整素材的角色包或 ComfyUI 生成管線來補齊。
-
-
