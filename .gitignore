@@ -16,7 +16,13 @@ uv.lock
 *.md
 !README.md
 !CHANGELOG.md
+!CONTRIBUTING.md
+!AGENTS.md
+!SPEC.md
+!MEMOIR.md
 !docs/**/*.md
 
 # Vendored local tools (own git repos, not tracked here) — e.g. mycat-gen
-vendors/
+# Un-ignore the directory so we can whitelist *.md inside it
+vendors/*
+!vendors/*.md

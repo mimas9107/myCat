@@ -28,6 +28,12 @@ All notable changes to this project are documented in this file.
 ### Fixed
 - **The Linux launcher icon actually updates when the app updates.** `install_desktop_entry()` copied the icon to a single stable path (`~/.local/share/mycat/icon.png`) and overwrote it in place. Desktop icon caches (GNOME/KDE) key on the path and kept serving the old bitmap, so after a `pip install -U mycat` the applications-menu / taskbar icon stayed on the previous cat. The copy is now named after the icon's content hash (`icon-<hash>.png`) and referenced from `Icon=`, so a changed icon lands at a fresh path the cache can't stale; older copies (and the legacy `icon.png`) are cleaned up. The running app's in-memory window icon still needs a restart, as before (branch `fix/desktop-icon-cache-bust`).
 
+## [Unreleased]
+
+### Added
+- **Voice Assistant Planning**: Documented architectural plans and tasks (`PLAN-1a.md`, `TASK-1a.md`) for integrating a fully local Voice Assistant using PyAudio, Edge Impulse (wake word), and faster-whisper.
+- **Project Documentation**: Created `AGENTS.md` (AI agent collaboration rules), `SPEC.md` (voice technology specifications), and `MEMOIR.md` (development history and architectural decisions).
+
 ## [0.1.27] - 2026-07-27
 
 ### Changed
