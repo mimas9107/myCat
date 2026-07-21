@@ -1,0 +1,16 @@
+audio:
+  sample_rate: 16000
+  chunk_duration_ms: 100
+  buffer_seconds: 3
+
+vad:
+  threshold: 1000000.0
+
+wake_word:
+  threshold: 0.8
+  model_path: "models/impulse_model.eim"
+
+asr:
+  model_size: "base"
+  device: "cpu"
+  compute_type: "int8"

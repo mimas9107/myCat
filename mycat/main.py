@@ -48,6 +48,7 @@ if __package__:
         secret_store,
         update_check,
         updater,
+        voice_assistant,
     )
 else:
     import importlib
@@ -72,6 +73,7 @@ else:
     digest = importlib.import_module("mycat.digest")
     update_check = importlib.import_module("mycat.update_check")
     updater = importlib.import_module("mycat.updater")
+    voice_assistant = importlib.import_module("mycat.voice_assistant")
 
 from PySide6 import QtCore, QtGui, QtNetwork, QtWidgets
 
@@ -641,6 +643,39 @@ class PixelCatWindow(QtWidgets.QWidget):
         # The morning newspaper: yesterday's stats once per day, first thing
         # after 05:00 — another small reason the cat is running at dawn.
         self.morning_digest = digest.MorningDigest(self.focus_controller.store, announcer=self.announcer)
+
+        # Voice Assistant Worker initialization
+        self.voice_worker = None
+        try:
+            from mycat.voice_assistant.voice_worker import VoiceWorker
+            self.voice_worker = VoiceWorker()
+            self.voice_worker.status_changed_signal.connect(self._on_voice_status_changed)
+            self.voice_worker.intent_detected_signal.connect(self._on_voice_intent_detected)
+            self.voice_worker.start()
+        except Exception as e:
+            logger.warning("Voice Assistant worker disabled or failed to start: %s", e)
+
+    def _on_voice_status_changed(self, status: str) -> None:
+        logger.info("Voice Assistant status changed: %s", status)
+
+    def _on_voice_intent_detected(self, intent: dict) -> None:
+        logger.info("Voice Assistant intent detected: %s", intent)
+        intent_type = intent.get("type")
+        data = intent.get("data", {})
+
+        if intent_type == "CHAT":
+            if hasattr(self, "_toggle_llm_chat"):
+                self._toggle_llm_chat()
+        elif intent_type == "SET_REMINDER":
+            if hasattr(self, "_open_reminder_dialog"):
+                self._open_reminder_dialog()
+        elif intent_type == "SLEEP":
+            self.close()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if self.voice_worker and self.voice_worker.isRunning():
+            self.voice_worker.stop()
+        super().closeEvent(event)
 
     def setup_gif_content(self, png_pixmap, gif_movie, gif_data) -> None:
         """Legacy single-GIF char: static first frame + play-once animation."""
@@ -1609,7 +1644,7 @@ class PixelCatWindow(QtWidgets.QWidget):
 
     def start_animation(self) -> None:
         """Switch from static PNG to one-shot GIF playback."""
-        if self.state != 'png':
+        if self.state != 'png' or self.char_pack is not None or self.gif_movie is None:
             return
 
         gif_size = self.gif_movie.scaledSize()
