@@ -31,8 +31,12 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Voice Animation Overlay**:新建 `mycat/voice_animation.py`，`VoiceAnimationController` 以 QPainter 程序化變形回應語音事件。Wake word → 彈跳膨脹，Transcribing → 歪頭，Intent → 小彈跳。SLEEP intent 改為觸發 sleep 動畫而非直接 close。
+- **Mock Voice Worker**:新建 `mycat/mock_voice.py`，用 `--mock-voice` 啟動時以自動循環的 status 事件模擬語音流程，方便測試動畫反應。
 - **Voice Assistant Planning**: Documented architectural plans and tasks (`PLAN-1a.md`, `TASK-1a.md`) for integrating a fully local Voice Assistant using PyAudio, Edge Impulse (wake word), and faster-whisper.
+- **Voice Animation Planning**:新增 `PLAN-1b.md` 與 `TASK-1b.md`，定義語音→動畫整合的架構規劃與任務分配。
 - **Project Documentation**: Created `AGENTS.md` (AI agent collaboration rules), `SPEC.md` (voice technology specifications), and `MEMOIR.md` (development history and architectural decisions).
+- **CharPack Debug Logging**:新增 `_fsm_debug_tick` 節流式條件檢查 log，每3秒輸出完整狀態機條件（sleep/yawn/idle/blink/hungry），方便確認素材缺失或邏輯問題。
 
 ## [0.1.27] - 2026-07-27
 
