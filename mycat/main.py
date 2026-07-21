@@ -677,6 +677,7 @@ class PixelCatWindow(QtWidgets.QWidget):
             if hasattr(self, "_open_reminder_dialog"):
                 self._open_reminder_dialog()
         elif intent_type == "SLEEP":
+            # self.close()  # [VoiceAnim] original: close immediately
             # [VoiceAnim] trigger sleep animation if CharPack supports it
             if self.char_pack is not None and (
                 self.char_pack.sleep is not None or self.char_pack.sleep_in is not None
