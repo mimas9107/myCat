@@ -48,6 +48,8 @@ secure = ["keyring>=24"]
 # ICS calendar reminders: RRULE expansion (the daily standup) is a swamp not
 # worth hand-rolling, so the calendar feature needs these two small libs.
 calendar = ["icalendar>=6", "recurring-ical-events>=3"]
+# Voice Assistant integration
+voice = ["pyaudio>=0.2.14", "pyyaml>=6.0", "numpy>=1.24.0", "faster-whisper>=1.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
