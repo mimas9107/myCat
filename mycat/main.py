@@ -538,6 +538,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         available_images: list[str] = None,
         gif_data: bytes = b"",
         pack: "char_pack.CharPack | None" = None,
+        mock_voice: bool = False,
     ) -> None:
         platform_name = ""
         app_instance = QtWidgets.QApplication.instance()
@@ -647,11 +648,17 @@ class PixelCatWindow(QtWidgets.QWidget):
         # Voice Assistant Worker initialization
         self.voice_worker = None
         try:
-            from mycat.voice_assistant.voice_worker import VoiceWorker
-            self.voice_worker = VoiceWorker()
+            if mock_voice:
+                from mycat.mock_voice import MockVoiceWorker
+                self.voice_worker = MockVoiceWorker()
+            else:
+                from mycat.voice_assistant.voice_worker import VoiceWorker
+                self.voice_worker = VoiceWorker()
             self.voice_worker.status_changed_signal.connect(self._on_voice_status_changed)
             self.voice_worker.intent_detected_signal.connect(self._on_voice_intent_detected)
             self.voice_worker.start()
+            from mycat.voice_animation import VoiceAnimationController
+            self.voice_anim = VoiceAnimationController(self, self.voice_worker)
         except Exception as e:
             logger.warning("Voice Assistant worker disabled or failed to start: %s", e)
 
@@ -670,7 +677,22 @@ class PixelCatWindow(QtWidgets.QWidget):
             if hasattr(self, "_open_reminder_dialog"):
                 self._open_reminder_dialog()
         elif intent_type == "SLEEP":
-            self.close()
+            # self.close()  # [VoiceAnim] original: close immediately
+            # [VoiceAnim] trigger sleep animation if CharPack supports it
+            if self.char_pack is not None and (
+                self.char_pack.sleep is not None or self.char_pack.sleep_in is not None
+            ):
+                now = self.pack_now()
+                if self.char_pack.sleep_in is not None:
+                    self.start_clip(self.char_pack.sleep_in, "sleeping", now)
+                else:
+                    self.base_state = "sleeping"
+                    self.current_pixmap = self.char_pack.sleep or self.char_pack.static
+                self.update()
+                logger.info("[voice-intent] SLEEP → sleep animation triggered")
+            else:
+                logger.info("[voice-intent] SLEEP → no CharPack sleep support, closing")
+                self.close()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.voice_worker and self.voice_worker.isRunning():
@@ -786,6 +808,46 @@ class PixelCatWindow(QtWidgets.QWidget):
             return self.test_now
         return self.eye_clock.elapsed() / 1000.0
 
+    def _fsm_debug_tick(self, now):
+        """Throttled condition check logging — shows every check, not spam."""
+        if not getattr(self, '_fsm_debug_enabled', True):
+            return
+        last = getattr(self, '_fsm_last_debug', -999.0)
+        if now - last < 3.0:
+            return
+        self._fsm_last_debug = now
+        pack = self.char_pack
+        idle_for = now - self.last_interaction
+        cursor_still = now - self.last_cursor_move
+        logger.info(
+            "[fsm-check] base=%s clip=%s idle=%.1fs cursor_still=%.1fs",
+            self.base_state,
+            "YES" if self.active_clip else "no",
+            idle_for, cursor_still,
+        )
+        if self.active_clip:
+            anim, start, ns = self.active_clip
+            age_ms = (now - start) * 1000.0
+            total_ms = sum(anim.delays)
+            logger.info("  clip: next_state=%s age=%.0fms/%.0fms", ns, age_ms, total_ms)
+        else:
+            logger.info("  clip: none")
+        logger.info("  hungry_anims=%d battery_low=%s next_hungry_in=%.1fs",
+                     len(pack.hungry_anims), self._battery_low(),
+                     max(0, self.next_hungry - now))
+        logger.info("  sleep: pack.sleep=%s pack.sleep_in=%s sleep_after=%.1fs idle>after=%s",
+                     pack.sleep is not None, pack.sleep_in is not None,
+                     pack.sleep_after, idle_for > pack.sleep_after)
+        logger.info("  yawn:  pack.yawn=%s yawned=%s cursor_still=%.1fs yawn_after=%.1fs still>after=%s",
+                     pack.yawn is not None, self.yawned,
+                     cursor_still, pack.yawn_after, cursor_still > pack.yawn_after)
+        logger.info("  idle:  pool=%d next_in=%.1fs", len(pack.idle_anims), max(0, self.next_idle - now))
+        logger.info("  anims: %d next_in=%s", len(pack.anims),
+                     [max(0, round(t - now, 1)) for t in self.anim_next])
+        logger.info("  blink: enabled=%s squinting=%s next_in=%.1fs",
+                     pack.blink_enabled, now < self.squint_until,
+                     max(0, self.next_blink - now))
+
     def pack_tick(self) -> None:
         """Advance the state machine; repaint only when the frame or gaze changes."""
         now = self.pack_now()
@@ -795,13 +857,25 @@ class PixelCatWindow(QtWidgets.QWidget):
             self.last_cursor = cursor
             self.last_cursor_move = now
             self.yawned = False
+        prev_mode = getattr(self, 'pack_mode', None)
         previous = self.current_pixmap
         self.pack_mode = self.update_pack_frame()
+        self._fsm_debug_tick(now)  # [DEBUG] throttled condition check dump
+        # [DEBUG] log state transitions
+        if self.pack_mode != prev_mode:
+            idle_for = now - self.last_interaction
+            cursor_still = now - self.last_cursor_move
+            logger.info(
+                "[pack-state] mode=%s base=%s idle=%.1fs cursor_still=%.1fs",
+                self.pack_mode, self.base_state, idle_for, cursor_still,
+            )
         changed = self.current_pixmap is not previous
         if moved and self.pack_mode == "open" and self.char_pack.eyes is not None:
             changed = True
         if changed:
             self.update()
+        elif getattr(self, "voice_anim", None) and self.voice_anim.has_active_overlay:
+            self.update()  # [VoiceAnim] force repaint while overlay active
 
     def clip_frame(self, anim, age_ms: float):
         accumulated = 0
@@ -812,6 +886,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         return anim.frames[-1]
 
     def start_clip(self, anim, next_state: str, now: float) -> None:
+        logger.info("[pack-clip] start -> next_state=%s frames=%d", next_state, len(anim.frames))
         self.active_clip = (anim, now, next_state)
         if anim.frames:
             self.current_pixmap = anim.frames[0]
@@ -821,6 +896,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         going_to_sleep = self.active_clip is not None and self.active_clip[2] == "sleeping"
         if self.base_state != "sleeping" and not going_to_sleep:
             return False
+        logger.info("[pack-wake] waking from base_state=%s going_to_sleep=%s", self.base_state, going_to_sleep)
         self.last_interaction = now      # waking is an interaction; don't re-sleep/yawn instantly
         self.last_cursor_move = now
         self.yawned = False
@@ -865,6 +941,7 @@ class PixelCatWindow(QtWidgets.QWidget):
             anim, start, next_state = self.active_clip
             age_ms = (now - start) * 1000.0
             if not anim.frames or age_ms >= sum(anim.delays):
+                logger.info("[pack-fsm] clip complete -> base_state=%s", next_state)
                 self.active_clip = None
                 if next_state:
                     self.base_state = next_state
@@ -875,6 +952,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         # Held sleeping pose (wake is driven by interaction, not here).
         if self.base_state == "sleeping":
             self.current_pixmap = pack.sleep or pack.static
+            # [DEBUG] logger.info("[pack-fsm] holding sleep pose")
             return "sleep"
 
         idle_for = now - self.last_interaction
@@ -888,13 +966,16 @@ class PixelCatWindow(QtWidgets.QWidget):
         # sleep
         if (pack.sleep is not None or pack.sleep_in is not None) and idle_for > pack.sleep_after:
             if pack.sleep_in is not None:
+                logger.info("[pack-fsm] triggering sleep_in (idle %.1fs > %.1fs)", idle_for, pack.sleep_after)
                 self.start_clip(pack.sleep_in, "sleeping", now)
                 return "anim"
+            logger.info("[pack-fsm] no sleep_in anim, jumping to sleeping (idle %.1fs > %.1fs)", idle_for, pack.sleep_after)
             self.base_state = "sleeping"
             self.current_pixmap = pack.sleep or pack.static
             return "sleep"
         # yawn (precursor to sleep)
         if pack.yawn is not None and not self.yawned and cursor_still > pack.yawn_after:
+            logger.info("[pack-fsm] triggering yawn (cursor_still %.1fs > %.1fs)", cursor_still, pack.yawn_after)
             self.yawned = True
             self.start_clip(pack.yawn, "awake", now)
             return "anim"
@@ -1741,6 +1822,8 @@ class PixelCatWindow(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.drawPixmap(x, y, self.current_pixmap)
+        if getattr(self, "voice_anim", None):
+            self.voice_anim.apply_overlay(painter, x, y)
         if mode == "open":
             self.draw_pupils(painter, x, y)
         painter.end()
@@ -1840,6 +1923,11 @@ def parse_args() -> argparse.Namespace:
         "--debug",
         action="store_true",
         help="Enable verbose DEBUG logging (per-frame animation cycle, GIF timing, etc.)",
+    )
+    parser.add_argument(
+        "--mock-voice",
+        action="store_true",
+        help="Use MockVoiceWorker instead of real VoiceWorker (for testing voice animations)",
     )
     llm.add_arguments(parser)
     return parser.parse_args()
@@ -2423,14 +2511,16 @@ def main() -> None:
         if zip_path and char_pack.is_new_pack(zip_path):
             pack = char_pack.load_pack(zip_path)
             window = PixelCatWindow(pack.static, None, args.wait, Path(zip_path).stem,
-                                    available_images, b"", pack=pack)
+                                    available_images, b"", pack=pack,
+                                    mock_voice=args.mock_voice)
         else:
             png_pixmap, gif_movie, file_name, gif_data = load_packaged_images(args.image, default_image)
             logger.info(
                 f"Playing {file_name}.zip (first frame) "
                 f"{png_pixmap.width()}x{png_pixmap.height()} for {args.wait:.1f}s"
             )
-            window = PixelCatWindow(png_pixmap, gif_movie, args.wait, file_name, available_images, gif_data)
+            window = PixelCatWindow(png_pixmap, gif_movie, args.wait, file_name, available_images, gif_data,
+                                    mock_voice=args.mock_voice)
     except Exception as e:
         logger.error(f"Error loading char: {e}")
         sys.exit(2)
