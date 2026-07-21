@@ -40,4 +40,30 @@
 * **架構影響**：
   這也再次驗證了將 `pyaudio` 放在 `pyproject.toml` 的 `[project.optional-dependencies] voice` 而非核心 `dependencies` 的正確性 — 避免一般使用者 `pip install mycat` 時因缺少系統開發套件而安裝失敗。
 
+### [架構決策] 語音事件驅動貓咪動畫反應 (Voice Animation Overlay)
+* **日期**：2026-07-21
+* **問題描述**：
+  `VoiceWorker` 已透過 Qt Signals 廣播 `status_changed_signal` 與 `intent_detected_signal`，但 `main.py` 的 handler 只做 log 或開啟 UI 視窗，完全沒有驅動貓咪的 CharPack 狀態機動畫。需要讓語音事件能觸發貓咪的視覺反應。
+* **沙盤推演與考量**：
+  * **方案 A (直接改 main.py)**：在 `_on_voice_status_changed` 與 `_on_voice_intent_detected` 中直接操作狀態機。改動分散且侵入性高。
+  * **方案 B (獨立 Controller 模式)**：新建 `voice_animation.py`，controller 自行連接 voice_worker 的 signals，透過 QPainter 程序化變形（scale/translate）在 paintEvent 中疊加 overlay。main.py 只需 ~10 行掛鉤。
+* **最終解法 (方案 B)**：
+  1. 新建 `mycat/voice_animation.py`，實作 `VoiceAnimationController(QObject)`。
+  2. Controller 在 `__init__` 中連接 `voice_worker.status_changed_signal` 與 `intent_detected_signal`。
+  3. 收到信號後設定 overlay 狀態（type + duration），在 `apply_overlay()` 中用 `painter.save/translate/scale/restore` 做程序化變形。
+  4. main.py 改動：(a) 實例化 controller (2行)、(b) `_pack_tick` 中 overlay 活躍時強制重繪 (1行)、(c) `paintEvent` 中呼叫 `apply_overlay` (1行)。
+  5. SLEEP intent 從 `self.close()` 改為觸發 sleep 動畫（有素材時）或維持 close（無素材時）。
+* **技術卡點**：
+  * **QTimer 在 QThread 中的可靠性**：MockVoiceWorker 初版用 `QTimer` 物件在 QThread 中排程，信號未能穩定觸發。改用 `QTimer.singleShot` 遞迴排程後解決。
+  * **SLEEP intent 的副作用**：Mock 測試時 SLEEP → close()、CHAT → 開聊天視窗、SET_REMINDER → 開提醒視窗，會干扰動畫測試。最終 mock 循環只保留 status 事件。
+
+### [環境卡點] cat.zip 角色包缺少互動素材
+* **日期**：2026-07-21
+* **問題描述**：
+  `cat.zip` 只包含 `static.png`、`blink.png`、`eye_left.png`、`eye_right.png`，完全沒有 `yawn.gif`、`sleep.png`、`sleep_in.gif`、`idle*.gif`、`click*.gif` 等素材。導致 CharPack 狀態機中 yawn、sleep、idle-random、click 反應全部因 `pack.xxx is None` 而跳過。
+* **影響**：
+  狀態機實際上只剩 `open↔blink` 切換與眼球追蹤。debug log 中所有 `pack.yawn=False`、`pack.sleep=False` 等條件檢查直接顯示素材缺失。
+* **解法**：
+  建立 debug logging 系統（`_fsm_debug_tick`）每3秒輸出完整條件檢查，確認是素材問題而非邏輯 bug。後續可透過更換有完整素材的角色包或 ComfyUI 生成管線來補齊。
+
 
