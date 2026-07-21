@@ -69,6 +69,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 - **Internal maintainability refactor (no behaviour change).** A single source of truth for the config path (`paths.py`) and shared config load/save plumbing (`config_store.py`) replace the per-feature copy-paste, and every single-underscore identifier across the codebase was renamed to a plain public name (house style). Also corrects stale contributor paths in `CLAUDE.md` (`chars/` and the "Chars" menu) and drops a dead `prompted` config field (branch `chore/maintainability-phase-0`).
 
+
 ## [0.1.24] - 2026-07-21
 
 ### Fixed
