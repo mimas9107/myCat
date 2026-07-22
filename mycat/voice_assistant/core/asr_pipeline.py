@@ -4,10 +4,11 @@ import numpy as np
 class ASRPipeline:
     """faster-whisper ASR pipeline wrapper."""
 
-    def __init__(self, model_size="base", device="cpu", compute_type="int8"):
+    def __init__(self, model_size="base", device="cpu", compute_type="int8", language="en"):
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        self.language = language
         self.model = None
         self._initialized = False
 
@@ -48,7 +49,7 @@ class ASRPipeline:
             else:
                 audio_float = audio_np.astype(np.float32)
 
-            segments, _info = self.model.transcribe(audio_float, beam_size=5)
+            segments, _info = self.model.transcribe(audio_float, beam_size=5, language=self.language)
             text = "".join(segment.text for segment in segments).strip()
             return text
         except Exception as e:

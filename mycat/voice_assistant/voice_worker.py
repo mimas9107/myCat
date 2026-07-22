@@ -49,6 +49,7 @@ class VoiceWorker(QThread):
             model_size=asr_cfg.get("model_size", "base"),
             device=asr_cfg.get("device", "cpu"),
             compute_type=asr_cfg.get("compute_type", "int8"),
+            language=asr_cfg.get("language", "en"),
         )
 
     def run(self):
