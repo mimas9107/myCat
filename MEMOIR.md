@@ -80,3 +80,25 @@
   * 點擊時呼叫 Qt 6 原生介面 `self.windowHandle().startSystemMove()`，將拖曳動作委派給 Wayland Compositor (Sway / Mutter)。
   * 拖曳結束時 `MouseButtonRelease` 自動捕捉並呼叫 `_save_position()` 儲存位置。
   * `main.py` 僅需在 `PixelCatWindow.__init__` 增加 5 行插件掛鉤程式碼，完全保留 X11 與上游主線邏輯。
+
+### [環境卡點] VAD 音訊擷取：裝置選擇與采樣率相容性
+* **日期**：2026-07-22
+* **問題描述**：
+  執行 VAD standalone 測試腳本 (`tests/test_vad.py`) 時，PyAudio 在 PulseAudio/PipeWire 環境下遇到多重問題：
+  1. **raw ALSA 裝置不支援 16kHz**：`hw:1,0` (HDA Intel PCH ALC3232 Analog) 僅支援 44100Hz，開啟 16kHz stream 會拋出 `[Errno -9997] Invalid sample rate`。
+  2. **PipeWire 裝置 64ch 相容問題**：PyAudio 開啟 PipeWire 裝置時可能 hang 或 crash。
+  3. **VAD threshold 估算錯誤**：預設 threshold 1,000,000 太低，底噪即觸發；或太高（若單位誤判）導致永遠不觸發。
+* **根因分析**：
+  * 系統同時有 ALSA (card 1) + PulseAudio + PipeWire。PyAudio 裝置清單中 `[3]` 是 raw ALSA，`[5]` 是 pipewire，`[6]` 是 pulse。
+  * Raw ALSA 由硬體直接控制，不支援采樣率轉換。PulseAudio/PipeWire 作為 virtual audio server，能自動處理采樣率轉換。
+  * Energy VAD 計算的是 `sum(sample²)/len`（均方能量），16-bit PCM 正常說話約 10⁷~10⁸ 量級，底噪約 3×10⁶~5×10⁶。
+* **解法**：
+  1. **裝置選擇**：自動優先選用 PulseAudio 或 PipeWire 裝置（非 raw ALSA），它們支援 16kHz 採樣率轉換。
+  2. **Threshold 調整**：觀察底噪約 3-5M，建議 threshold 設為底噪 3 倍 → **15,000,000**。
+  3. **Path C（繞過 Wake Word）**：暫時跳過喚醒詞偵測，VAD 觸發後直接進 ASR，用於開發階段快速迭代。
+  4. **Debug 工具**：建立 `tests/test_vad.py` standalone 腳本，自動選裝置、打印 energy/RMS/avg，並建議 threshold。
+* **架構影響**：
+  * `config.yaml` 的 `vad.threshold` 從預設 1,000,000 → 15,000,000。
+  * `voice_worker.py` 新增 `vad_energy_signal` 供 UI 顯示能量條（可選）。
+  * `voice_worker.py` 的 `run()` loop 改為 VAD → ASR（跳過 Wake Word），待模型就緒後切回。
+  * `vad_filter.py` 新增 `get_energy()` 方法供 debug/外部顯示使用。
