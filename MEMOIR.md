@@ -102,3 +102,25 @@
   * `voice_worker.py` 新增 `vad_energy_signal` 供 UI 顯示能量條（可選）。
   * `voice_worker.py` 的 `run()` loop 改為 VAD → ASR（跳過 Wake Word），待模型就緒後切回。
   * `vad_filter.py` 新增 `get_energy()` 方法供 debug/外部顯示使用。
+
+### [架構決策] English-first ASR + RMS-based VAD threshold 校準
+* **日期**：2026-07-22
+* **問題描述**：
+  1. VAD threshold 單位不明確：原始 `energy²` (均方能量) 數值巨大（~10⁶~10⁷），不直觀。
+  2. faster-whisper `base` 模型未指定語言，環境噪音被誤判為 `nn`（挪威語）。
+  3. ASR 未經端到端驗證，無法確認完整管線可用。
+* **解法**：
+  1. **RMS-based threshold**：`vad_filter.py` 改用 `sqrt(sum²/N)`（Root Mean Square），threshold 從 `15,000,000`（energy²）→ `20,000`（RMS）。觀察底噪 RMS ~12,000-14,000，speech 觸發 ~20,000-24,000。
+  2. **English-first**：`config.yaml` 新增 `language: "en"`，`asr_pipeline.py` 傳入 `language=self.language`。whisper 強制英文辨識，跳過中文/其他語言。
+  3. **Intent parser 英文化**：`intent_parser.py` 加入英文關鍵字（remind, sleep, hide, shutdown），中文關鍵字保留但降為次要。
+  4. **端到端驗證**：建立 `tests/test_asr_chain.py`，用 ALSA 測試音效 (`/usr/share/sounds/alsa/Front_Center.wav`) 餵入 ASR，成功辨識為 "Front, center."，intent 正確解析為 `CHAT`。
+* **驗證結果**：
+  ```
+  VAD:  RMS=20,462 > threshold=20,000 → TRIGGER ✅
+  ASR:  Front_Center.wav → "Front, center." ✅
+  Intent: "front, center." → CHAT → data: {'text': 'front, center.'} ✅
+  ```
+* **架構影響**：
+  * `audio_stream.py` 新增 `device_index` 參數，`config.yaml` 新增 `audio.device_index: 6`（PulseAudio）。
+  * `voice_worker.py` 全部 `print()` 改為 `logger.info()` 統一日誌格式。
+  * VAD→ASR 管線已驗證可用（Path C 繞過 Wake Word），待喚醒詞模型就緒後切回。
