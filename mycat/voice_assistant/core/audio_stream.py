@@ -6,9 +6,10 @@ import pyaudio
 class AudioStreamManager:
     """Manages PyAudio input stream and maintains a ring buffer for historical audio."""
 
-    def __init__(self, sample_rate=16000, chunk_duration_ms=100, buffer_seconds=3):
+    def __init__(self, sample_rate=16000, chunk_duration_ms=100, buffer_seconds=3, device_index=None):
         self.sample_rate = sample_rate
         self.chunk_size = int(sample_rate * (chunk_duration_ms / 1000.0))
+        self.device_index = device_index
         max_chunks = int((buffer_seconds * 1000) / chunk_duration_ms)
 
         self.ring_buffer = collections.deque(maxlen=max_chunks)
@@ -31,6 +32,7 @@ class AudioStreamManager:
             channels=1,
             rate=self.sample_rate,
             input=True,
+            input_device_index=self.device_index,
             frames_per_buffer=self.chunk_size,
             stream_callback=self._audio_callback,
         )
