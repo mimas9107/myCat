@@ -41,10 +41,15 @@ class VoiceWorker(QThread):
         )
         self.vad_threshold = vad_cfg.get("threshold", 3873.0)
         self.vad = EnergyVAD(threshold=self.vad_threshold)
-        self.wake_word = WakeWordEngine(
-            model_path=ww_cfg.get("model_path", "models/impulse_model.eim"),
-            threshold=ww_cfg.get("threshold", 0.8),
-        )
+
+        self._ww_enabled = ww_cfg.get("enabled", False)
+        self.wake_word = None
+        if self._ww_enabled:
+            self.wake_word = WakeWordEngine(
+                model_path=ww_cfg.get("model_path", "models/impulse_model.eim"),
+                threshold=ww_cfg.get("threshold", 0.8),
+            )
+
         self.asr = ASRPipeline(
             model_size=asr_cfg.get("model_size", "base"),
             device=asr_cfg.get("device", "cpu"),
@@ -63,7 +68,7 @@ class VoiceWorker(QThread):
         self.status_changed_signal.emit("LISTENING")
         logger.info("Started | device=%s | VAD threshold=%.0f | WakeWord=%s",
                      self.audio_stream.device_index, self.vad_threshold,
-                     "available" if self.wake_word._initialized else "no model")
+                     "on" if self._ww_enabled else "off")
 
         vad_cooldown = 0.0
         while self._is_running:
@@ -123,7 +128,8 @@ class VoiceWorker(QThread):
         self._is_running = False
         try:
             self.audio_stream.stop()
-            self.wake_word.stop()
+            if self.wake_word:
+                self.wake_word.stop()
         except Exception as e:
             logger.error("Error stopping components: %s", e)
         self.wait()
