@@ -4,7 +4,7 @@ audio:
   buffer_seconds: 3
 
 vad:
-  threshold: 15000000.0
+  threshold: 3873.0
 
 wake_word:
   threshold: 0.8
