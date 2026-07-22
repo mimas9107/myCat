@@ -8,6 +8,7 @@ vad:
   threshold: 20000.0
 
 wake_word:
+  enabled: false
   threshold: 0.8
   model_path: "models/impulse_model.eim"
 
