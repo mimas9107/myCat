@@ -65,3 +65,18 @@
   狀態機實際上只剩 `open↔blink` 切換與眼球追蹤。debug log 中所有 `pack.yawn=False`、`pack.sleep=False` 等條件檢查直接顯示素材缺失。
 * **解法**：
   建立 debug logging 系統（`_fsm_debug_tick`）每3秒輸出完整條件檢查，確認是素材問題而非邏輯 bug。後續可透過更換有完整素材的角色包或 ComfyUI 生成管線來補齊。
+
+### [架構決策] Wayland 原生視窗拖曳機制 (Wayland Drag Plugin)
+* **日期**：2026-07-22
+* **問題描述**：
+  在 Wayland (Sway/wlroots 與 GNOME Wayland) 環境下，小貓出現在螢幕中央且無法用滑鼠拖曳移動。
+* **根因分析**：
+  1. **`self.move(x, y)` 限制**：Wayland (XDG-Shell) 協定為保護系統隱私與視窗管理，嚴格禁止 Client 端應用程式自主設定全域螢幕座標（`self.move()` 在原生 Wayland 下被直接忽略）。
+  2. **`event.globalPosition()` 失效**：Wayland 下 `globalPosition()` 無法取得全域座標，僅回傳視窗內部相對座標，導致傳統 X11 拖曳算術公式失效。
+* **核心原則與插件化解法**：
+  * **原則**：盡量不更動 `main.py` 主線邏輯，維持原作者與社群開發的乾淨上游合併。
+  * **解法**：建立獨立插件 `mycat/wayland_drag.py`，實作 `WaylandDragHandler(QObject)`。
+  * 透過 `QObject.installEventFilter` 掛鉤 `PixelCatWindow` 的 `MouseButtonPress` 事件。
+  * 點擊時呼叫 Qt 6 原生介面 `self.windowHandle().startSystemMove()`，將拖曳動作委派給 Wayland Compositor (Sway / Mutter)。
+  * 拖曳結束時 `MouseButtonRelease` 自動捕捉並呼叫 `_save_position()` 儲存位置。
+  * `main.py` 僅需在 `PixelCatWindow.__init__` 增加 5 行插件掛鉤程式碼，完全保留 X11 與上游主線邏輯。
