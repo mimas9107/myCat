@@ -70,19 +70,29 @@ def main():
     if env_dev is not None:
         device_index = int(env_dev)
     else:
-        # Auto-pick: prefer virtual wrappers (pulse/pipewire) — they handle sample
-        # rate conversion; raw ALSA (hw:X,Y) often only supports 44100.
+        # Auto-pick: prefer pulse (most stable with PyAudio), then pipewire, skip raw ALSA
         device_index = None
         for i in range(p.get_host_api_info_by_index(0)["deviceCount"]):
             try:
                 info = p.get_device_info_by_host_api_device_index(0, i)
                 if info.get("maxInputChannels", 0) > 0:
                     name = info.get("name", "").lower()
-                    if "pipewire" in name or "pulse" in name:
+                    if "pulse" in name:
                         device_index = i
                         break
             except Exception:
                 pass
+        if device_index is None:
+            for i in range(p.get_host_api_info_by_index(0)["deviceCount"]):
+                try:
+                    info = p.get_device_info_by_host_api_device_index(0, i)
+                    if info.get("maxInputChannels", 0) > 0:
+                        name = info.get("name", "").lower()
+                        if "pipewire" in name:
+                            device_index = i
+                            break
+                except Exception:
+                    pass
         if device_index is None:
             print("No virtual audio device found, falling back to first available.")
             device_index = 0
