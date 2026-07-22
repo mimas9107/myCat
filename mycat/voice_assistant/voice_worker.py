@@ -1,3 +1,4 @@
+import logging
 import time
 import numpy as np
 from PySide6.QtCore import QThread, Signal
@@ -8,6 +9,8 @@ from .core.vad_filter import EnergyVAD
 from .core.wake_word import WakeWordEngine
 from .core.asr_pipeline import ASRPipeline
 from .core.intent_parser import parse_text_to_intent
+
+logger = logging.getLogger(__name__)
 
 
 class VoiceWorker(QThread):
@@ -34,8 +37,9 @@ class VoiceWorker(QThread):
             sample_rate=audio_cfg.get("sample_rate", 16000),
             chunk_duration_ms=audio_cfg.get("chunk_duration_ms", 100),
             buffer_seconds=audio_cfg.get("buffer_seconds", 3),
+            device_index=audio_cfg.get("device_index"),
         )
-        self.vad_threshold = vad_cfg.get("threshold", 50000.0)
+        self.vad_threshold = vad_cfg.get("threshold", 3873.0)
         self.vad = EnergyVAD(threshold=self.vad_threshold)
         self.wake_word = WakeWordEngine(
             model_path=ww_cfg.get("model_path", "models/impulse_model.eim"),
@@ -53,10 +57,12 @@ class VoiceWorker(QThread):
         try:
             self.audio_stream.start()
         except Exception as e:
-            print(f"[VoiceWorker] Failed to start AudioStreamManager: {e}")
+            logger.error("Failed to start AudioStreamManager: %s", e)
 
         self.status_changed_signal.emit("LISTENING")
-        print(f"[VoiceWorker] Started | VAD threshold={self.vad_threshold} | WakeWord={not self.wake_word._initialized}")
+        logger.info("Started | device=%s | VAD threshold=%.0f | WakeWord=%s",
+                     self.audio_stream.device_index, self.vad_threshold,
+                     "available" if self.wake_word._initialized else "no model")
 
         vad_cooldown = 0.0
         while self._is_running:
@@ -75,6 +81,7 @@ class VoiceWorker(QThread):
                 )
                 energy = self.vad.get_energy(recent_chunk)
                 self.vad_energy_signal.emit(energy)
+                logger.info("[vad] RMS=%.0f (threshold=%.0f)", energy, self.vad_threshold)
                 vad_cooldown = now
 
             # 1. VAD Filter
@@ -87,7 +94,8 @@ class VoiceWorker(QThread):
                 continue
 
             # [Path C] Bypass wake word — go straight to ASR
-            print(f"[VoiceWorker] VAD TRIGGER! energy={energy:.0f} (threshold={self.vad_threshold})")
+            energy_now = self.vad.get_energy(recent_chunk)
+            logger.info("[vad] TRIGGER! RMS=%.0f (threshold=%.0f)", energy_now, self.vad_threshold)
             self.status_changed_signal.emit("TRANSCRIBING")
 
             # Capture audio for transcription (grab 2 seconds of buffer)
@@ -96,19 +104,18 @@ class VoiceWorker(QThread):
                 continue
 
             # 2. Speech Transcription
-            print("[VoiceWorker] → ASR transcribing...")
+            logger.info("[asr] transcribing %.1fs audio...", len(cmd_audio) / self.audio_stream.sample_rate)
             transcription = self.asr.transcribe(cmd_audio)
 
             # 3. Intent Parsing & Signal Dispatch
             if transcription:
-                print(f"[VoiceWorker] ASR result: '{transcription}'")
+                logger.info("[asr] result: '%s'", transcription)
                 intent = parse_text_to_intent(transcription)
                 self.intent_detected_signal.emit(intent)
             else:
-                print("[VoiceWorker] ASR returned empty text")
+                logger.info("[asr] returned empty text")
 
             self.status_changed_signal.emit("LISTENING")
-            print("[VoiceWorker] → back to LISTENING")
 
     def stop(self):
         """Stops the thread safely."""
@@ -117,5 +124,5 @@ class VoiceWorker(QThread):
             self.audio_stream.stop()
             self.wake_word.stop()
         except Exception as e:
-            print(f"[VoiceWorker] Error stopping components: {e}")
+            logger.error("Error stopping components: %s", e)
         self.wait()

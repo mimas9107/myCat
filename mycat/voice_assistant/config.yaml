@@ -2,9 +2,10 @@ audio:
   sample_rate: 16000
   chunk_duration_ms: 100
   buffer_seconds: 3
+  device_index: 6
 
 vad:
-  threshold: 3873.0
+  threshold: 20000.0
 
 wake_word:
   threshold: 0.8
