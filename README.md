@@ -1,7 +1,8 @@
 EN | [RU](https://github.com/yumiaura/myCat/blob/main/docs/README_RU.md) | [CN](https://github.com/yumiaura/myCat/blob/main/docs/README_CN.md) | [ID](https://github.com/yumiaura/myCat/blob/main/docs/README_ID.md) | [KO](https://github.com/yumiaura/myCat/blob/main/docs/README_KO.md)
 
+![mycat2](./docs/mycat2.png)
 > **🚧 預告 / Future Feature Preview: Voice Assistant (myCat + Voice)**
-> 我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。敬請期待！
+>我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。敬請期待！
 
 ## Desktop Cat: QT Overlay 🐱
 
