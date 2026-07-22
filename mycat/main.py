@@ -662,6 +662,13 @@ class PixelCatWindow(QtWidgets.QWidget):
         except Exception as e:
             logger.warning("Voice Assistant worker disabled or failed to start: %s", e)
 
+        # Wayland native drag handler (plugin hook)
+        try:
+            from mycat.wayland_drag import attach_wayland_drag_handler
+            self.wayland_drag_handler = attach_wayland_drag_handler(self)
+        except Exception as e:
+            logger.warning("Wayland drag handler initialization failed: %s", e)
+
     def _on_voice_status_changed(self, status: str) -> None:
         logger.info("Voice Assistant status changed: %s", status)
 

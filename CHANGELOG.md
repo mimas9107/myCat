@@ -31,6 +31,7 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Wayland Native Window Dragging**: 新增 `mycat/wayland_drag.py` 插件，透過 Qt 的 `QWindow.startSystemMove()` 與 `QObject.installEventFilter` 以非侵入式方式支援 Wayland 合成器 (Sway, GNOME Mutter, KDE, Hyprland) 的原生視窗拖曳，完全不干擾 `main.py` 主線邏輯。
 - **Voice Animation Overlay**:新建 `mycat/voice_animation.py`，`VoiceAnimationController` 以 QPainter 程序化變形回應語音事件。Wake word → 彈跳膨脹，Transcribing → 歪頭，Intent → 小彈跳。SLEEP intent 改為觸發 sleep 動畫而非直接 close。
 - **Mock Voice Worker**:新建 `mycat/mock_voice.py`，用 `--mock-voice` 啟動時以自動循環的 status 事件模擬語音流程，方便測試動畫反應。
 - **Voice Assistant Planning**: Documented architectural plans and tasks (`PLAN-1a.md`, `TASK-1a.md`) for integrating a fully local Voice Assistant using PyAudio, Edge Impulse (wake word), and faster-whisper.
