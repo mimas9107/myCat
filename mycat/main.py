@@ -48,7 +48,6 @@ if __package__:
         secret_store,
         update_check,
         updater,
-        voice_assistant,
     )
 else:
     import importlib
@@ -73,7 +72,6 @@ else:
     digest = importlib.import_module("mycat.digest")
     update_check = importlib.import_module("mycat.update_check")
     updater = importlib.import_module("mycat.updater")
-    voice_assistant = importlib.import_module("mycat.voice_assistant")
 
 from PySide6 import QtCore, QtGui, QtNetwork, QtWidgets
 
@@ -646,28 +644,13 @@ class PixelCatWindow(QtWidgets.QWidget):
         # after 05:00 — another small reason the cat is running at dawn.
         self.morning_digest = digest.MorningDigest(self.focus_controller.store, announcer=self.announcer)
 
-        # Voice Assistant Worker initialization
-        self.voice_worker = None
-        self._llm_backend = None
-        try:
-            from mycat.speech_bubble import SpeechBubble
-            self._speech_bubble = SpeechBubble()
-        except Exception:
-            self._speech_bubble = None
-        try:
-            if mock_voice:
-                from mycat.mock_voice import MockVoiceWorker
-                self.voice_worker = MockVoiceWorker(test_wav=test_wav)
-            else:
-                from mycat.voice_assistant.voice_worker import VoiceWorker
-                self.voice_worker = VoiceWorker()
-            self.voice_worker.status_changed_signal.connect(self._on_voice_status_changed)
-            self.voice_worker.intent_detected_signal.connect(self._on_voice_intent_detected)
-            self.voice_worker.start()
-            from mycat.voice_animation import VoiceAnimationController
-            self.voice_anim = VoiceAnimationController(self, self.voice_worker)
-        except Exception as e:
-            logger.warning("Voice Assistant worker disabled or failed to start: %s", e)
+        # Voice Assistant — single bridge (debug: VOICE_BRIDGE_DEBUG=1)
+        from mycat.voice_bridge import VoiceBridge
+        self.voice_bridge = VoiceBridge(
+            self, mock_voice=mock_voice, test_wav=test_wav,
+        )
+        self.voice_bridge.set_sleep_callback(self._trigger_sleep_animation)
+        self.voice_bridge.set_reminder_callback(self.open_reminder)
 
         # Wayland native drag handler (plugin hook)
         try:
@@ -676,90 +659,29 @@ class PixelCatWindow(QtWidgets.QWidget):
         except Exception as e:
             logger.warning("Wayland drag handler initialization failed: %s", e)
 
-    def _on_voice_status_changed(self, status: str) -> None:
-        logger.info("Voice Assistant status changed: %s", status)
-
     def _on_voice_intent_detected(self, intent: dict) -> None:
-        logger.info("Voice Assistant intent detected: %s", intent)
-        intent_type = intent.get("type")
-        data = intent.get("data", {})
+        """Delegate all voice intents to VoiceBridge."""
+        self.voice_bridge.handle_intent(intent.get("type"), intent.get("data", {}))
 
-        if intent_type == "CHAT":
-            user_text = data.get("text", "")
-            if user_text and getattr(self, "_llm_backend", None):
-                self._voice_chat(user_text)
+    def _trigger_sleep_animation(self) -> None:
+        """Callback for SLEEP intent — triggers CharPack sleep or closes window."""
+        if self.char_pack is not None and (
+            self.char_pack.sleep is not None or self.char_pack.sleep_in is not None
+        ):
+            now = self.pack_now()
+            if self.char_pack.sleep_in is not None:
+                self.start_clip(self.char_pack.sleep_in, "sleeping", now)
             else:
-                logger.info("[voice-intent] CHAT → no backend or empty text, skipping")
-        elif intent_type == "SET_REMINDER":
-            if hasattr(self, "_open_reminder_dialog"):
-                self._open_reminder_dialog()
-        elif intent_type == "SLEEP":
-            # self.close()  # [VoiceAnim] original: close immediately
-            # [VoiceAnim] trigger sleep animation if CharPack supports it
-            if self.char_pack is not None and (
-                self.char_pack.sleep is not None or self.char_pack.sleep_in is not None
-            ):
-                now = self.pack_now()
-                if self.char_pack.sleep_in is not None:
-                    self.start_clip(self.char_pack.sleep_in, "sleeping", now)
-                else:
-                    self.base_state = "sleeping"
-                    self.current_pixmap = self.char_pack.sleep or self.char_pack.static
-                self.update()
-                logger.info("[voice-intent] SLEEP → sleep animation triggered")
-            else:
-                logger.info("[voice-intent] SLEEP → no CharPack sleep support, closing")
-                self.close()
-
-    def _voice_chat(self, user_text: str) -> None:
-        """Send voice text to Ollama in a background thread, show response in bubble."""
-        backend = self._llm_backend
-        bubble = getattr(self, "_speech_bubble", None)
-        if not backend or not bubble:
-            return
-        self.voice_anim.set_overlay("think", 300.0)
-        self.update()
-
-        class _Worker(QtCore.QObject):
-            done = QtCore.Signal(str)
-            error = QtCore.Signal(str)
-            def run(self):
-                try:
-                    reply = backend.reply(user_text, "You are a cute cat. Reply briefly and playfully.")
-                    self.done.emit(reply)
-                except Exception as exc:
-                    self.error.emit(str(exc))
-
-        thread = QtCore.QThread(self)
-        worker = _Worker()
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.done.connect(lambda text: self._show_voice_bubble(text))
-        worker.error.connect(lambda err: self._voice_chat_error(err))
-        worker.done.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(thread.deleteLater)
-        worker.deleteLater()
-        thread.start()
-        self._voice_chat_thread = thread
-
-    def _show_voice_bubble(self, text: str) -> None:
-        bubble = getattr(self, "_speech_bubble", None)
-        if not bubble:
-            return
-        self.voice_anim.clear_overlay()
-        bubble.show(text)
-        self.voice_anim.set_overlay("react", 0.5)
-        self.update()
-
-    def _voice_chat_error(self, err: str) -> None:
-        self.voice_anim.clear_overlay()
-        self.update()
-        logger.warning("[voice-chat] Ollama error: %s", err)
+                self.base_state = "sleeping"
+                self.current_pixmap = self.char_pack.sleep or self.char_pack.static
+            self.update()
+            logger.info("[voice-intent] SLEEP → sleep animation triggered")
+        else:
+            logger.info("[voice-intent] SLEEP → no CharPack sleep support, closing")
+            self.close()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        if self.voice_worker and self.voice_worker.isRunning():
-            self.voice_worker.stop()
+        self.voice_bridge.shutdown()
         super().closeEvent(event)
 
     def setup_gif_content(self, png_pixmap, gif_movie, gif_data) -> None:
@@ -896,7 +818,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         else:
             logger.info("  clip: none")
         logger.info("  hungry_anims=%d battery_low=%s next_hungry_in=%.1fs",
-                     len(pack.hungry_anims), self._battery_low(),
+                     len(pack.hungry_anims), self.battery_low(),
                      max(0, self.next_hungry - now))
         logger.info("  sleep: pack.sleep=%s pack.sleep_in=%s sleep_after=%.1fs idle>after=%s",
                      pack.sleep is not None, pack.sleep_in is not None,
@@ -937,10 +859,8 @@ class PixelCatWindow(QtWidgets.QWidget):
             changed = True
         if changed:
             self.update()
-        elif getattr(self, "voice_anim", None) and self.voice_anim.has_active_overlay:
-            self.update()  # [VoiceAnim] force repaint while overlay active
-        elif getattr(self, "_speech_bubble", None) and self._speech_bubble.is_active:
-            self.update()  # force repaint while bubble visible
+        elif self.voice_bridge.should_repaint():
+            self.update()
 
     def clip_frame(self, anim, age_ms: float):
         accumulated = 0
@@ -1887,11 +1807,10 @@ class PixelCatWindow(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.drawPixmap(x, y, self.current_pixmap)
-        if getattr(self, "voice_anim", None):
-            self.voice_anim.apply_overlay(painter, x, y)
-        bubble = getattr(self, "_speech_bubble", None)
-        if bubble:
-            bubble.paint(painter, x, y, self.current_pixmap.width(), self.current_pixmap.height())
+        self.voice_bridge.apply_paint(
+            painter, x, y,
+            self.current_pixmap.width(), self.current_pixmap.height(),
+        )
         if mode == "open":
             self.draw_pupils(painter, x, y)
         painter.end()
@@ -2601,7 +2520,7 @@ def main() -> None:
         sys.exit(2)
     if llm_context:
         llm.attach(window, llm_context)
-        window._llm_backend = llm_context.backend
+        window.voice_bridge.set_llm_backend(llm_context.backend)
     
     if args.pos:
         window.move(args.pos[0], args.pos[1])

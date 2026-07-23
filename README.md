@@ -1,9 +1,5 @@
 EN | [RU](https://github.com/yumiaura/myCat/blob/main/docs/README_RU.md) | [CN](https://github.com/yumiaura/myCat/blob/main/docs/README_CN.md) | [ID](https://github.com/yumiaura/myCat/blob/main/docs/README_ID.md) | [KO](https://github.com/yumiaura/myCat/blob/main/docs/README_KO.md)
 
-![mycat2](./docs/mycat2.png)
-> **🚧 預告 / Future Feature Preview: Voice Assistant (myCat + Voice)**
->我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。敬請期待！
-
 ## Desktop Cat: QT Overlay 🐱
 
 [<img src="https://raw.githubusercontent.com/yumiaura/myCat/refs/heads/main/docs/cat.gif" width="164" alt="cat.gif"/>](https://github.com/yumiaura)
@@ -215,6 +211,12 @@ docker compose -f docker-compose.mac.yml up
 [MIT License](LICENSE.txt)
 
 Thank you for reading to the end! 😸🐾
+
+## 🔮 Upcoming Features
+
+![mycat2](./docs/mycat2.png)
+> **🚧 預告 / Future Feature Preview: Voice Assistant (myCat + Voice)**
+>我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。敬請期待！
 
 <p class="badges">
   <a href="https://buymeacoffee.com/yumiaura"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=000" alt="Buy Me a Coffee"></a>

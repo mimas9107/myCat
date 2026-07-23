@@ -31,6 +31,7 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **VoiceBridge 整合層**: 新建 `mycat/voice_bridge.py`，將 VoiceWorker、SpeechBubble、VoiceAnimationController 封裝為單一入口。`main.py` voice 相關改動從 ~120 行散佈降至 ~15 行 delegation，大幅降低 rebase 衝突風險。`voice_animation.py` 改用 `time_fn` callback 注入，不再直接存取 window private API。新增 `VOICE_BRIDGE_DEBUG=1` 環境變數追蹤 callback 路徑。
 - **Wayland Native Window Dragging**: 新增 `mycat/wayland_drag.py` 插件，透過 Qt 的 `QWindow.startSystemMove()` 與 `QObject.installEventFilter` 以非侵入式方式支援 Wayland 合成器 (Sway, GNOME Mutter, KDE, Hyprland) 的原生視窗拖曳，完全不干擾 `main.py` 主線邏輯。
 - **Voice Animation Overlay**:新建 `mycat/voice_animation.py`，`VoiceAnimationController` 以 QPainter 程序化變形回應語音事件。Wake word → 彈跳膨脹，Transcribing → 歪頭，Intent → 小彈跳。SLEEP intent 改為觸發 sleep 動畫而非直接 close。
 - **Mock Voice Worker**:新建 `mycat/mock_voice.py`，用 `--mock-voice` 啟動時以自動循環的 status 事件模擬語音流程，方便測試動畫反應。
@@ -38,6 +39,10 @@ All notable changes to this project are documented in this file.
 - **Voice Animation Planning**:新增 `PLAN-1b.md` 與 `TASK-1b.md`，定義語音→動畫整合的架構規劃與任務分配。
 - **Project Documentation**: Created `AGENTS.md` (AI agent collaboration rules), `SPEC.md` (voice technology specifications), and `MEMOIR.md` (development history and architectural decisions).
 - **CharPack Debug Logging**:新增 `_fsm_debug_tick` 節流式條件檢查 log，每3秒輸出完整狀態機條件（sleep/yawn/idle/blink/hungry），方便確認素材缺失或邏輯問題。
+
+### Changed
+- **README.md Voice Preview 移至底部 Upcoming Features section**: 減少與上游的 README 衝突機率。
+- **voice_assistant lazy import**: `main.py` module-level `voice_assistant` import 改為 VoiceBridge 內 lazy import，避免 startup crash 風險。
 
 ## [0.1.27] - 2026-07-27
 

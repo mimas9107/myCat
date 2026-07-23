@@ -146,3 +146,27 @@
   * `main.py`：`_voice_chat()` 方法（background QThread + Ollama）、`_show_voice_bubble()`、`_voice_chat_error()`。`paintEvent` 加入 `bubble.paint()` 調用。`_pack_tick` 加入 bubble 活躍時強制重繪。
   * `voice_animation.py`：新增 `set_overlay()` 與 `clear_overlay()` 公開 API。
   * `mock_voice.py`：`test_wav` 參數，`_run_test_wav()` 走真實 ASR→Intent 管線。
+
+### [架構決策] VoiceBridge 統一整合層：減少 rebase 衝突
+* **日期**：2026-07-23
+* **問題描述**：
+  重定基底 (rebase) origin/main 時，voice 功能在 `main.py` 散佈 6 處（init 22行、6 個 handler 80行、closeEvent、pack_tick、paintEvent、argparse），任何上游改動碰到鄰近行即觸發衝突。同時 `voice_animation.py` 直接存取 `window._pack_now()`（private method），上游 maintainability refactor 已改名過一次，未來再改即壞。
+* **沙盤推演與考量**：
+  * **方案 A (維持現狀)**：每次 rebase 手動解衝突。成本隨上游活躍度線性成長。
+  * **方案 B (VoiceBridge 統一入口)**：新建 `voice_bridge.py` 封裝所有 voice 初始化、signal routing、Ollama chat、bubble/overlay paint。main.py 只留 delegation call。`voice_animation.py` 改用 `time_fn` callback 注入取代直接存取 window private API。
+* **最終解法（方案 B）**：
+  1. 新建 `mycat/voice_bridge.py`，`VoiceBridge(QObject)` 擁有 VoiceWorker、SpeechBubble、VoiceAnimationController。
+  2. main.py 改動：`__init__` 5 行初始化、1 行 delegation intent、1 個 `_trigger_sleep_animation` callback、1 行 `closeEvent`、1 行 `pack_tick`、1 行 `paintEvent`。
+  3. `voice_animation.py` 新增 `time_fn` callback 參數，不再直接訪問 `window._pack_now()`。無注入時 fallback 至舊路徑（deprecation path）。
+  4. `voice_assistant` module-level import 改為 VoiceBridge 內 lazy import。
+  5. 新增 `VOICE_BRIDGE_DEBUG=1` 環境變數開關，追蹤 callback 註冊與觸發路徑，3 個 clean commit 後關閉。
+* **踩坑紀錄**：
+  * **方法命名不一致**：rebase 衝突解決後，`_battery_low()` 應為 `battery_low()`、`_open_reminder_dialog` 應為 `open_reminder`（maintainability refactor 已改名）。冒煙測試即時捕捉修正。
+* **驗證結果**：
+  * Mock voice 3 分鐘冒煙測試：882 行 log，0 錯誤，110 次事件路由。
+  * Real voice 2 分鐘冒煙測試：607 行 log，0 錯誤，13 次 VAD 觸發，7 次完整 Ollama→Bubble 鏈路。
+* **架構影響**：
+  * `voice_bridge.py`：新檔案，統一入口。擁有 worker/bubble/anim，暴露 `shutdown()`、`apply_paint()`、`should_repaint()`、`handle_intent()`、`set_llm_backend()`。
+  * `main.py`：voice 相關從 ~120 行散佈降至 ~15 行 delegation。
+  * `voice_animation.py`：`time_fn` callback 注入，`_pack_now()` decoupling。
+  * 上游改動 `closeEvent`/`paintEvent`/`__init__` 時衝突機率大幅降低。
