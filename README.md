@@ -212,13 +212,13 @@ docker compose -f docker-compose.mac.yml up
 
 Thank you for reading to the end! 😸🐾
 
+<p class="badges">
+  <a href="https://buymeacoffee.com/yumiaura"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=000" alt="Buy Me a Coffee"></a>
+  <a href="https://www.patreon.com/yumiaura"><img src="https://img.shields.io/badge/Patreon-support-F96854?logo=patreon&logoColor=fff" alt="Patreon"></a>
+</p>
+
 ## 🔮 Upcoming Features
 
 ![mycat2](./docs/mycat2.png)
 > **🚧 預告 / Future Feature Preview: Voice Assistant (myCat + Voice)**
 >我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。敬請期待！
-
-<p class="badges">
-  <a href="https://buymeacoffee.com/yumiaura"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=000" alt="Buy Me a Coffee"></a>
-  <a href="https://www.patreon.com/yumiaura"><img src="https://img.shields.io/badge/Patreon-support-F96854?logo=patreon&logoColor=fff" alt="Patreon"></a>
-</p>
