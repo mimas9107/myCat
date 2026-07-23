@@ -39,18 +39,31 @@ def _dbg(msg: str, *args) -> None:
 _OVERLAY_WAKE = "wake"
 _OVERLAY_THINK = "think"
 _OVERLAY_REACT = "react"
+_OVERLAY_YAWN = "yawn"
 _CLEAR_TYPES = (None, "clear")
 
 
 class VoiceAnimationController(QtCore.QObject):
     """Connects to VoiceWorker signals and drives procedural overlay transforms."""
 
-    def __init__(self, window, voice_worker, time_fn=None, parent=None):
+    _YAWN_IDLE_DEFAULT = 30.0  # seconds of silence before yawn
+
+    def __init__(self, window, voice_worker, time_fn=None,
+                 overlay_enabled: bool = True, idle_yawn_after: float = None,
+                 parent=None):
         super().__init__(parent)
         self.window = window
         self._overlay_type = None
         self._overlay_start = 0.0
         self._overlay_duration = 0.0
+        self._overlay_enabled = overlay_enabled
+        self._voice_pack = None  # VoiceCharPack, set via set_voice_pack()
+
+        # idle yawn timer
+        self._idle_yawn_after = idle_yawn_after or self._YAWN_IDLE_DEFAULT
+        self._idle_timer = QtCore.QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._on_idle_yawn)
 
         # time_fn: callable returning current time in seconds.
         # Injected by VoiceBridge to decouple from window._pack_now().
@@ -64,26 +77,51 @@ class VoiceAnimationController(QtCore.QObject):
 
         voice_worker.status_changed_signal.connect(self._on_status)
         voice_worker.intent_detected_signal.connect(self._on_intent)
-        logger.info("VoiceAnimationController connected")
+        self._reset_idle_timer()
+        logger.info("VoiceAnimationController connected (overlay=%s, idle_yawn=%.0fs)",
+                     "ON" if self._overlay_enabled else "OFF",
+                     self._idle_yawn_after)
 
     # ── time source ───────────────────────────────────────────
 
     def _now(self) -> float:
         return self._time_fn()
 
+    # ── voice char pack ─────────────────────────────────────
+
+    def set_voice_pack(self, voice_pack) -> None:
+        """Set VoiceCharPack for static sprite overlays."""
+        self._voice_pack = voice_pack
+
     # ── slots ────────────────────────────────────────────────
 
+    def _reset_idle_timer(self) -> None:
+        """Restart the idle yawn countdown.  Called on every voice activity."""
+        if self._idle_yawn_after > 0:
+            self._idle_timer.start(int(self._idle_yawn_after * 1000))
+
+    def _on_idle_yawn(self) -> None:
+        """Fires when no voice activity for _idle_yawn_after seconds."""
+        if self._voice_pack is not None and self._voice_pack.get("yawn") is not None:
+            self._trigger(_OVERLAY_YAWN, 3.0)
+            logger.info("[voice-anim] 😴 idle yawn overlay (3s)")
+
     def _on_status(self, status: str) -> None:
+        self._reset_idle_timer()
         if status == "WAKE_WORD_TRIGGERED":
             self._trigger(_OVERLAY_WAKE, 0.8)
+            logger.info("[voice-anim] ⚡ wake overlay (0.8s)")
         elif status == "TRANSCRIBING":
             self._trigger(_OVERLAY_THINK, 1.5)
+            logger.info("[voice-anim] 🤔 think overlay (1.5s)")
         elif status == "LISTENING":
             self._clear()
+            logger.info("[voice-anim] 👂 back to listening")
         else:
             logger.debug("[voice-anim] unknown status: %s", status)
 
     def _on_intent(self, intent: dict) -> None:
+        self._reset_idle_timer()
         intent_type = intent.get("type", "")
         if intent_type in ("CHAT", "SET_REMINDER"):
             self._trigger(_OVERLAY_REACT, 0.5)
@@ -104,6 +142,8 @@ class VoiceAnimationController(QtCore.QObject):
         self._clear()
 
     def _trigger(self, overlay_type: str, duration: float) -> None:
+        if not self._overlay_enabled:
+            return
         now = self._now()
         self._overlay_type = overlay_type
         self._overlay_start = now
@@ -121,6 +161,15 @@ class VoiceAnimationController(QtCore.QObject):
             return False
         now = self._now()
         return (now - self._overlay_start) < self._overlay_duration
+
+    @property
+    def overlay_replaces_face(self) -> bool:
+        """True when active overlay has a VoiceCharPack sprite → replace current pixmap."""
+        if not self.has_active_overlay:
+            return False
+        if self._voice_pack is None:
+            return False
+        return self._voice_pack.get(self._overlay_type) is not None
 
     # ── overlay params (per-type procedural transforms) ──────
 
@@ -145,20 +194,40 @@ class VoiceAnimationController(QtCore.QObject):
             ease = math.sin(t * math.pi)
             return (1.0, 1.0 + 0.08 * ease, 0, -10 * ease, 0)
 
+        if self._overlay_type == _OVERLAY_YAWN:
+            # Slow squash: mouth-open is wider, ease is half-sine
+            ease = math.sin(t * math.pi * 0.5)    # 0→1
+            return (1.0 + 0.1 * ease, 1.0 - 0.05 * ease, 0, 0, 0)
+
         return (1.0, 1.0, 0, 0, 0)
 
     # ── paint hook ───────────────────────────────────────────
 
     def apply_overlay(self, painter: QtGui.QPainter, x: int, y: int) -> None:
-        """Called from paintEvent after drawPixmap.  Applies procedural transform."""
+        """Called from paintEvent after drawPixmap.
+
+        If a VoiceCharPack sprite exists for the current overlay type, draw
+        it centred on the cat.  Otherwise fall back to the procedural
+        scale/translate transform.
+        """
         if not self.has_active_overlay:
             return
 
+        # Prefer voice char sprite when available
+        if self._voice_pack is not None:
+            sprite = self._voice_pack.get(self._overlay_type)
+            if sprite is not None:
+                # Centre the sprite on the cat
+                sx = x + (self.window.current_pixmap.width() - sprite.width()) // 2
+                sy = y + (self.window.current_pixmap.height() - sprite.height()) // 2
+                painter.drawPixmap(sx, sy, sprite)
+                return
+
+        # Fallback: procedural transform
         sx, sy, dx, dy, dim = self._overlay_params()
         pixmap = self.window.current_pixmap
         w, h = pixmap.width(), pixmap.height()
 
-        # Anchor at bottom-centre so squash grows from the feet
         anchor_x = x + w / 2
         anchor_y = y + h
 
