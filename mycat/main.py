@@ -567,6 +567,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         # where enabling compositing adds noticeable latency. Edges are hard
         # (1-bit), which suits the pixel-art cat. MYCAT_SHAPE_MASK=1/0 forces it.
         self.shape_mask_key = None
+        self._composite_mask_cache_key = None
         force_mask = os.environ.get("MYCAT_SHAPE_MASK")
         if force_mask in ("0", "1"):
             self.shape_mask_enabled = force_mask == "1"
@@ -1796,22 +1797,19 @@ class PixelCatWindow(QtWidgets.QWidget):
         x = (widget_rect.width() - pixmap_rect.width()) // 2
         y = (widget_rect.height() - pixmap_rect.height()) // 2
 
-        # Update the silhouette mask BEFORE painting: the backing-store -> screen
-        # blit at the end of this paint is clipped to the *current* mask, so any
-        # pixels newly revealed by a shape change (e.g. switching to a char
-        # with a larger silhouette) must be inside the mask now, or they never
-        # get blitted and stay as stale/black framebuffer until the next repaint.
+        # --- shape mask (X11 no-compositor only) ---
         if self.shape_mask_enabled:
             self.refresh_shape_mask(x, y)
-
+        
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        painter.drawPixmap(x, y, self.current_pixmap)
+        if not self.voice_bridge.overlay_replaces_face:
+            painter.drawPixmap(x, y, self.current_pixmap)
         self.voice_bridge.apply_paint(
             painter, x, y,
             self.current_pixmap.width(), self.current_pixmap.height(),
         )
-        if mode == "open":
+        if mode == "open" and not self.voice_bridge.overlay_replaces_face:
             self.draw_pupils(painter, x, y)
         painter.end()
 
@@ -1819,10 +1817,14 @@ class PixelCatWindow(QtWidgets.QWidget):
         """Clip the window to the current pixmap's alpha silhouette (no-compositor path).
 
         Recomputed only when the frame/position actually changes (cache key guard),
-        so the setMask never triggers a repaint loop.
+        so the setMask never triggers a repaint loop.  Called only when the
+        speech bubble is NOT active (paintEvent uses _set_composite_mask during bubble).
         """
         pixmap = self.current_pixmap
-        key = (pixmap.cacheKey(), x, y, self.width(), self.height())
+        bubble_active = bool(
+            self.voice_bridge._bubble and self.voice_bridge._bubble.is_active
+        )
+        key = (pixmap.cacheKey(), x, y, self.width(), self.height(), bubble_active)
         if key == self.shape_mask_key:
             return
         self.shape_mask_key = key
@@ -1850,6 +1852,29 @@ class PixelCatWindow(QtWidgets.QWidget):
         # char switch onto a static frame freezes the gap as black until the
         # next animation happens to repaint everything.
         self.update()
+
+    def _set_composite_mask(self, x: int, y: int,
+                            bubble_rect: QtCore.QRect | None = None) -> None:
+        """Set mask to cat silhouette + speech bubble rect (bubble-active path)."""
+        pixmap = self.current_pixmap
+        cache = getattr(self, "mask_cache", None)
+        region = cache.get(pixmap.cacheKey()) if cache is not None else None
+        if region is None:
+            bitmap = pixmap.mask()
+            if bitmap.isNull():
+                self.clearMask()
+                return
+            region = QtGui.QRegion(bitmap)
+            if cache is not None:
+                cache[pixmap.cacheKey()] = region
+        mask = region.translated(x, y) if (x or y) else region
+        if bubble_rect is None:
+            bubble_rect = self.voice_bridge.get_bubble_bounds(
+                x, y, pixmap.width(), pixmap.height(),
+            )
+        if bubble_rect is not None:
+            mask = mask.united(QtGui.QRegion(bubble_rect))
+        self.setMask(mask)
 
     def enterEvent(self, event: QtCore.QEvent) -> None:
         """Show the current-period tooltip immediately — no hover delay."""

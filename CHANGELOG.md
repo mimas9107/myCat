@@ -39,10 +39,21 @@ All notable changes to this project are documented in this file.
 - **Voice Animation Planning**:新增 `PLAN-1b.md` 與 `TASK-1b.md`，定義語音→動畫整合的架構規劃與任務分配。
 - **Project Documentation**: Created `AGENTS.md` (AI agent collaboration rules), `SPEC.md` (voice technology specifications), and `MEMOIR.md` (development history and architectural decisions).
 - **CharPack Debug Logging**:新增 `_fsm_debug_tick` 節流式條件檢查 log，每3秒輸出完整狀態機條件（sleep/yawn/idle/blink/hungry），方便確認素材缺失或邏輯問題。
+- **VoiceCharPack**: 新建 `mycat/voice_char_pack.py`，從角色 ZIP 中載入語音專屬素材 (`think.png`, `listen.png`, `yawn.png`)，自動匹配 char render scale。無素材時優雅降級。
+- **BubblePopup 浮動氣泡**: 新建 `mycat/bubble_popup.py`，使用 `Qt.ToolTip` (Wayland 上為 xdg_popup) 實作獨立浮動氣泡視窗。不受 Sway 平鋪管理，自動判斷上方/下方空間，尾巴方向隨之調整，8 秒自動關閉。`cat2.zip` 加入 `think.png`/`listen.png`/`yawn.png` 正式素材。
+- **Idle Yawn Timer**: VoiceAnimationController 新增 idle yawn 計時器，語音靜默 `idle_yawn_after` 秒後觸發 yawn overlay（預設 30s）。可透過 `config.yaml` 的 `overlay.idle_yawn_after` 設定或設為 0 關閉。
 
 ### Changed
 - **README.md Voice Preview 移至底部 Upcoming Features section**: 減少與上游的 README 衝突機率。
 - **voice_assistant lazy import**: `main.py` module-level `voice_assistant` import 改為 VoiceBridge 內 lazy import，避免 startup crash 風險。
+- **SpeechBubble 改為 BubblePopup**: 氣泡從 `main.py` 內的 QPainter 繪製改為獨立 `Qt.ToolTip` 浮動視窗，徹底解決 Sway 浮動模式下氣泡被 widget buffer 裁切的問題。`voice_bridge.py` 相應簡化 `apply_paint`/`should_repaint`/`get_bubble_bounds`。
+- **main.py paintEvent 簡化**: 移除 `bubble_rect`、`_set_composite_mask`、`_bubble_expanded`/`_original_size` 等視窗擴張邏輯。氣泡不再需要 widget resize。當 VoiceCharPack overlay sprite 活躍時跳過 `current_pixmap` 與瞳孔繪製以避免疊圖。
+- **VoiceBridge QThread Signal 連接**: `_Worker` signal 改為直接連接 method（移除 lambda 中介），避免跨執行緒 QTimer 崩潰 (`QObject::startTimer: Timers cannot be started from another thread`)。
+
+### Fixed
+- **Wayland 浮動模式下氣泡顯示**: 獨立 BubblePopup 不再依賴 widget buffer 大小，Sway float toggle (frameless) 下氣泡正常浮出。
+- **X11 無 compositor 氣泡顯示**: 同上獨立視窗方案，不再需要複雜的 composite mask 計算。
+- **Voice overlay sprite 疊圖**: `overlay_replaces_face` property 讓 `think`/`listen`/`yawn` 等 full-face sprite 活躍時跳過靜態貓臉與眼睛繪製。
 
 ## [0.1.27] - 2026-07-27
 

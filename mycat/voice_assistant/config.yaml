@@ -5,7 +5,7 @@ audio:
   device_index: 6
 
 vad:
-  threshold: 20000.0
+  threshold: 21000.0
 
 wake_word:
   enabled: false
@@ -17,3 +17,7 @@ asr:
   device: "cpu"
   compute_type: "int8"
   language: "en"
+
+overlay:
+  enabled: true
+  idle_yawn_after: 30  # seconds of silence before idle yawn (0 to disable)
