@@ -166,7 +166,60 @@
   * Mock voice 3 分鐘冒煙測試：882 行 log，0 錯誤，110 次事件路由。
   * Real voice 2 分鐘冒煙測試：607 行 log，0 錯誤，13 次 VAD 觸發，7 次完整 Ollama→Bubble 鏈路。
 * **架構影響**：
-  * `voice_bridge.py`：新檔案，統一入口。擁有 worker/bubble/anim，暴露 `shutdown()`、`apply_paint()`、`should_repaint()`、`handle_intent()`、`set_llm_backend()`。
-  * `main.py`：voice 相關從 ~120 行散佈降至 ~15 行 delegation。
-  * `voice_animation.py`：`time_fn` callback 注入，`_pack_now()` decoupling。
-  * 上游改動 `closeEvent`/`paintEvent`/`__init__` 時衝突機率大幅降低。
+ * `voice_bridge.py`：新檔案，統一入口。擁有 worker/bubble/anim，暴露 `shutdown()`、`apply_paint()`、`should_repaint()`、`handle_intent()`、`set_llm_backend()`。
+ * `main.py`：voice 相關從 ~120 行散佈降至 ~15 行 delegation。
+ * `voice_animation.py`：`time_fn` callback 注入，`_pack_now()` decoupling。
+ * 上游改動 `closeEvent`/`paintEvent`/`__init__` 時衝突機率大幅降低。
+
+### [架構決策] VoiceCharPack：語音專屬靜態素材載入器
+* **日期**：2026-07-23
+* **問題描述**：
+  `VoiceAnimationController` 的 `apply_overlay()` 使用程序化變形（scale/translate）模擬語音反應。但語音狀態（聽、思考、打哈欠）需要完全不同的角色表情，程序化變形從現有角色圖變不出全新的五官表情。
+* **解法**：
+  1. 新建 `mycat/voice_char_pack.py`，`VoiceCharPack` 類別從角色 ZIP/資料夾載入 `think.png`、`listen.png`、`yawn.png`。
+  2. 自動讀取 `static.png` 取得原生尺寸，計算與 render 尺寸的比例後同步縮放語音素材。
+  3. `VoiceBridge._init_animation()` 中建立 VoiceCharPack 並傳入 `VoiceAnimationController.set_voice_pack()`。
+  4. `apply_overlay()` 優先檢查 VoiceCharPack 是否有對應 sprite，有則直接繪製 sprite（取代程序化變形），無則 fallback 至原有 scale/translate 邏輯。
+* **架構影響**：
+  * `voice_char_pack.py`：新檔案。
+  * `voice_animation.py`：`set_voice_pack()`、`overlay_replaces_face` property（當 full-face sprite 活躍時跳過貓臉繪製）。
+  * `main.py`：`overlay_replaces_face` 控制是否畫 `current_pixmap` 與瞳孔。
+  * `cat2.zip`：加入 `think.png`、`listen.png`、`yawn.png`。
+
+### [架構決策] BubblePopup：以 Qt.ToolTip 實現 Wayland 兼容浮動氣泡
+* **日期**：2026-07-23
+* **問題描述**：
+  原本的 in-window SpeechBubble 在 Wayland (Sway) 浮動/無框模式下被 widget buffer 裁切，氣泡只能顯示下半 1/3。嘗試 resize widget 在 Wayland 上為非同步操作，compositor buffer 不會在當幀即時增長。獨立 QWidget（`FramelessWindowHint`）則被 Sway 平鋪管理為獨立 tile，違反氣泡位於貓旁的設計目標。
+* **沙盤推演與考量**：
+  * **方案 A (widget resize)**：`self.resize()` 在 Wayland 為 async，buffer 更新延後至少一幀。每次 resize 在 buffer 更新前繪製都會裁切。同時 resize 會觸發 layout 重算，造成貓咪位置跳動。
+  * **方案 B (獨立 QWidget)**：`Qt.Window | Qt.FramelessWindowHint` 在 Sway 下被管理為獨立 tile，無法浮動。
+  * **方案 C (Qt.ToolTip / xdg_popup)**：`Qt.ToolTip` 在 Wayland 使用 `xdg_popup` 協議。`xdg_popup` 是 transient 視窗，定位在父 surface（貓咪）附近，Sway 不會將其 tile 管理。不需要 widget resize。
+* **最終解法（方案 C）**：
+  1. 新建 `mycat/bubble_popup.py`，`BubblePopup(QWidget)` 使用 `Qt.ToolTip | Qt.FramelessWindowHint`。
+  2. `WA_ShowWithoutActivating` + `WA_TranslucentBackground`，不搶焦點、背景透明。
+  3. `show_bubble()` 計算氣泡位置（上方/下方自動選擇），`_position_near_cat()` 以 parent window 的 `mapToGlobal()` 計算螢幕座標。
+  4. `paintEvent()` 自行繪製圓角矩形 + 尾巴 + 文字，尾巴方向根據氣泡位置（上/下）自動調整。
+  5. 內部 `_hide_timer` 計時 8 秒後自動關閉。
+  6. `voice_bridge.py`：SpeechBubble 改為 BubblePopup。`apply_paint()`/`should_repaint()`/`get_bubble_bounds()` 簡化。
+  7. `main.py`：移除所有 widget 擴張程式碼（`_bubble_expanded`、`_original_size`、`_set_composite_mask`）。
+* **踩坑紀錄**：
+  * **QTimer 跨執行緒崩潰**：`_on_chat_done()` 經由 QThread signal 呼叫，lambda 中介導致 `_hide_timer.start()` 在 worker thread 執行。修復：直接 connect method（PySide6 AutoConnection 自動跨 thread queue）。
+* **架構影響**：
+  * `bubble_popup.py`：新檔案。
+  * `voice_bridge.py`：SpeechBubble → BubblePopup。`_on_chat_done` 傳入貓咪座標。
+  * `main.py`：大幅簡化 paintEvent，移除 resize/bubble_rect/mask 全部邏輯。
+  * `speech_bubble.py`：不再被引用，保留為備用。
+
+### [功能新增] Idle Yawn Timer：語音靜默觸發打哈欠
+* **日期**：2026-07-23
+* **問題描述**：
+  語音長時間安靜時（無人說話），VoiceAnimationController 沒有任何反應，角色保持 idle 狀態。需要一種「等待中」的反應。
+* **解法**：
+  1. `VoiceAnimationController.__init__` 新增 `idle_yawn_after` 參數與 `QTimer`。
+  2. `_reset_idle_timer()` 每次語音活動（任何 status/intent）時重設計時器。
+  3. 計時逾時觸發 `_on_idle_yawn()` → `_trigger("yawn", 3.0)`。
+  4. 可透過 `config.yaml` 的 `overlay.idle_yawn_after` 設定（預設 30s），設為 0 關閉。
+* **架構影響**：
+  * `voice_animation.py`：QTimer、`_reset_idle_timer`、`_on_idle_yawn`。
+  * `voice_bridge.py`：讀取 config 傳入 `idle_yawn_after`。
+  * `config.yaml`：`overlay.idle_yawn_after: 30`。

@@ -53,11 +53,11 @@ class VoiceBridge(QtCore.QObject):
 
     def _init_bubble(self) -> None:
         try:
-            from mycat.speech_bubble import SpeechBubble
-            self._bubble = SpeechBubble()
-            _dbg("SpeechBubble created")
+            from mycat.bubble_popup import BubblePopup
+            self._bubble = BubblePopup(self.window)
+            _dbg("BubblePopup created")
         except Exception as exc:
-            _dbg("SpeechBubble unavailable: %s", exc)
+            _dbg("BubblePopup unavailable: %s", exc)
             self._bubble = None
 
     def _init_worker(self, mock_voice: bool, test_wav: str | None) -> None:
@@ -81,15 +81,52 @@ class VoiceBridge(QtCore.QObject):
             return
         try:
             from mycat.voice_animation import VoiceAnimationController
+            overlay_cfg = self._worker.config.get("overlay", {})
+            overlay_enabled = overlay_cfg.get("enabled", True)
+            idle_yawn_after = overlay_cfg.get("idle_yawn_after", 30.0)
             self._anim = VoiceAnimationController(
                 window=self.window,
                 voice_worker=self._worker,
                 time_fn=self.window.pack_now,
+                overlay_enabled=overlay_enabled,
+                idle_yawn_after=float(idle_yawn_after),
             )
+
+            # Load voice-specific char assets (think.png, listen.png, yawn.png)
+            voice_pack = self._load_voice_pack()
+            if voice_pack is not None:
+                self._anim.set_voice_pack(voice_pack)
+
             _dbg("VoiceAnimationController created")
         except Exception as exc:
             _dbg("VoiceAnimationController unavailable: %s", exc)
             self._anim = None
+
+    def _load_voice_pack(self):
+        """Load VoiceCharPack if char path is known and render size available."""
+        from pathlib import Path
+        try:
+            from mycat.voice_char_pack import VoiceCharPack
+            char_name = getattr(self.window, "file_name", None)
+            if char_name is None:
+                return None
+            char_path = Path(__file__).resolve().parent / "chars" / f"{char_name}.zip"
+            if not char_path.exists():
+                # Try folder
+                char_path = Path(__file__).resolve().parent / "chars" / char_name
+                if not char_path.is_dir():
+                    return None
+            cur_pixmap = getattr(self.window, "current_pixmap", None)
+            if cur_pixmap is None:
+                return None
+            return VoiceCharPack(
+                str(char_path),
+                target_width=cur_pixmap.width(),
+                target_height=cur_pixmap.height(),
+            )
+        except Exception as exc:
+            _dbg("VoiceCharPack load skipped: %s", exc)
+            return None
 
     # ── public API ────────────────────────────────────────────
 
@@ -105,19 +142,24 @@ class VoiceBridge(QtCore.QObject):
 
     def apply_paint(self, painter: QtGui.QPainter,
                     x: int, y: int, cat_w: int, cat_h: int) -> None:
-        """Draw overlay + bubble.  Called from paintEvent."""
+        """Draw overlay.  Bubble is a separate popup window (self-rendering)."""
         if self._anim:
             self._anim.apply_overlay(painter, x, y)
-        if self._bubble:
-            self._bubble.paint(painter, x, y, cat_w, cat_h)
 
     def should_repaint(self) -> bool:
-        """True when overlay or bubble is active and needs animation frames."""
+        """True when overlay is active and needs animation frames."""
         if self._anim and self._anim.has_active_overlay:
             return True
-        if self._bubble and self._bubble.is_active:
-            return True
         return False
+
+    @property
+    def overlay_replaces_face(self) -> bool:
+        """True when active overlay has a voice char sprite → skip drawing cat face."""
+        return bool(self._anim and self._anim.overlay_replaces_face)
+
+    def get_bubble_bounds(self, *args) -> QtCore.QRect | None:
+        """Bubble is a separate popup window — no mask expansion needed."""
+        return None
 
     def handle_intent(self, intent_type: str, data: dict) -> bool:
         """Handle voice intent side-effects.  Returns True if handled.
@@ -125,30 +167,32 @@ class VoiceBridge(QtCore.QObject):
         CHAT / SET_REMINDER / SLEEP are handled here.
         Main.py only needs to call this from _on_voice_intent_detected.
         """
-        _dbg("handle_intent: type=%s", intent_type)
+        _EMOJI = {"CHAT": "💬", "SET_REMINDER": "⏰", "SLEEP": "😴"}
+        tag = _EMOJI.get(intent_type, "🎯")
+        _dbg("handle_intent: %s %s", tag, intent_type)
 
         if intent_type == "CHAT":
             user_text = data.get("text", "")
             if user_text and self._llm_backend:
                 self._voice_chat(user_text)
             else:
-                _dbg("CHAT skipped: no backend or empty text")
+                _dbg("💬 CHAT skipped: no backend or empty text")
             return True
 
         if intent_type == "SET_REMINDER":
             if self._reminder_callback:
-                _dbg("SET_REMINDER → callback")
+                _dbg("⏰ SET_REMINDER → callback")
                 self._reminder_callback()
             else:
-                _dbg("SET_REMINDER → no callback registered")
+                _dbg("⏰ SET_REMINDER → no callback registered")
             return True
 
         if intent_type == "SLEEP":
             if self._sleep_callback:
-                _dbg("SLEEP → callback")
+                _dbg("😴 SLEEP → callback")
                 self._sleep_callback()
             else:
-                _dbg("SLEEP → no callback, closing window")
+                _dbg("😴 SLEEP → no callback, closing window")
                 self.window.close()
             return True
 
@@ -174,13 +218,19 @@ class VoiceBridge(QtCore.QObject):
     # ── internal: status signal ───────────────────────────────
 
     def _on_status(self, status: str) -> None:
-        logger.info("Voice Assistant status changed: %s", status)
+        _EMOJI = {
+            "LISTENING": "👂",
+            "WAKE_WORD_TRIGGERED": "⚡",
+            "TRANSCRIBING": "📝",
+        }
+        tag = _EMOJI.get(status, "❓")
+        logger.info("[voice] %s %s", tag, status)
 
     # ── internal: intent signal ───────────────────────────────
 
     def _on_intent(self, intent: dict) -> None:
-        logger.info("Voice Assistant intent detected: %s", intent)
         intent_type = intent.get("type")
+        logger.info("[voice] 🎯 intent: %s", intent_type)
         data = intent.get("data", {})
         self.handle_intent(intent_type, data)
 
@@ -212,8 +262,8 @@ class VoiceBridge(QtCore.QObject):
         worker = _Worker()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.done.connect(lambda text: self._on_chat_done(text))
-        worker.error.connect(lambda err: self._on_chat_error(err))
+        worker.done.connect(self._on_chat_done)
+        worker.error.connect(self._on_chat_error)
         worker.done.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
@@ -226,7 +276,14 @@ class VoiceBridge(QtCore.QObject):
         if self._anim:
             self._anim.clear_overlay()
         if self._bubble:
-            self._bubble.show(text)
+            pixmap = getattr(self.window, "current_pixmap", None)
+            if pixmap is not None:
+                cat_x = (self.window.width() - pixmap.width()) // 2
+                cat_y = (self.window.height() - pixmap.height()) // 2
+                self._bubble.show_bubble(
+                    text, cat_x, cat_y, pixmap.width(), pixmap.height(),
+                )
+                logger.info("[voice] 💬 bubble-popup show: %r", text[:40])
         if self._anim:
             self._anim.set_overlay("react", 0.5)
         self.window.update()
@@ -234,5 +291,6 @@ class VoiceBridge(QtCore.QObject):
     def _on_chat_error(self, err: str) -> None:
         if self._anim:
             self._anim.clear_overlay()
+        logger.info("[voice] ❌ chat error: %s", err[:60])
         self.window.update()
         logger.warning("[voice-chat] Ollama error: %s", err)
