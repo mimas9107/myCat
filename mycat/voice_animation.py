@@ -5,21 +5,35 @@ Listens to VoiceWorker signals and applies short-lived QPainter transforms
 produces.  No new art assets needed — every reaction is a code-driven
 squash/stretch/tint of the existing sprite.
 
-Usage (from PixelCatWindow.__init__):
+Usage (from VoiceBridge):
     from mycat.voice_animation import VoiceAnimationController
-    self.voice_anim = VoiceAnimationController(self, self.voice_worker)
+    self.voice_anim = VoiceAnimationController(
+        window=window, voice_worker=worker, time_fn=window.pack_now,
+    )
 
 Then in paintEvent, after drawPixmap:
     if hasattr(self, "voice_anim"):
         self.voice_anim.apply_overlay(painter, x, y)
+
+Debug logging
+-------------
+Set env ``VOICE_BRIDGE_DEBUG=1`` to trace time_fn callback usage.
+After 3 consecutive clean commits, flip to 0 (or remove).
 """
 
-import math
 import logging
+import math
+import os
 
 from PySide6 import QtCore, QtGui
 
 logger = logging.getLogger(__name__)
+
+_DEBUG = os.environ.get("VOICE_BRIDGE_DEBUG", "0") == "1"
+
+def _dbg(msg: str, *args) -> None:
+    if _DEBUG:
+        logger.info("[voice-anim] " + msg, *args)
 
 # overlay type constants
 _OVERLAY_WAKE = "wake"
@@ -31,16 +45,31 @@ _CLEAR_TYPES = (None, "clear")
 class VoiceAnimationController(QtCore.QObject):
     """Connects to VoiceWorker signals and drives procedural overlay transforms."""
 
-    def __init__(self, window, voice_worker, parent=None):
+    def __init__(self, window, voice_worker, time_fn=None, parent=None):
         super().__init__(parent)
         self.window = window
         self._overlay_type = None
         self._overlay_start = 0.0
         self._overlay_duration = 0.0
 
+        # time_fn: callable returning current time in seconds.
+        # Injected by VoiceBridge to decouple from window._pack_now().
+        if time_fn is not None:
+            self._time_fn = time_fn
+            _dbg("time_fn injected: %s", time_fn)
+        else:
+            # backward compat fallback — deprecation path
+            self._time_fn = window._pack_now
+            _dbg("time_fn NOT injected, falling back to window._pack_now()")
+
         voice_worker.status_changed_signal.connect(self._on_status)
         voice_worker.intent_detected_signal.connect(self._on_intent)
         logger.info("VoiceAnimationController connected")
+
+    # ── time source ───────────────────────────────────────────
+
+    def _now(self) -> float:
+        return self._time_fn()
 
     # ── slots ────────────────────────────────────────────────
 
@@ -59,7 +88,7 @@ class VoiceAnimationController(QtCore.QObject):
         if intent_type in ("CHAT", "SET_REMINDER"):
             self._trigger(_OVERLAY_REACT, 0.5)
         elif intent_type == "SLEEP":
-            # SLEEP handled by main.py (_on_voice_intent_detected); no overlay.
+            # SLEEP handled by VoiceBridge intent dispatch; no overlay.
             pass
         else:
             logger.debug("[voice-anim] unhandled intent: %s", intent_type)
@@ -75,29 +104,29 @@ class VoiceAnimationController(QtCore.QObject):
         self._clear()
 
     def _trigger(self, overlay_type: str, duration: float) -> None:
-        now = self.window._pack_now()
+        now = self._now()
         self._overlay_type = overlay_type
         self._overlay_start = now
         self._overlay_duration = duration
-        logger.info("[voice-anim] trigger: %s (%.1fs)", overlay_type, duration)
+        _dbg("trigger: %s (%.1fs) via %s", overlay_type, duration, self._time_fn)
 
     def _clear(self) -> None:
         if self._overlay_type is not None:
-            logger.info("[voice-anim] overlay cleared")
+            _dbg("overlay cleared")
         self._overlay_type = None
 
     @property
     def has_active_overlay(self) -> bool:
         if self._overlay_type is None:
             return False
-        now = self.window._pack_now()
+        now = self._now()
         return (now - self._overlay_start) < self._overlay_duration
 
     # ── overlay params (per-type procedural transforms) ──────
 
     def _overlay_params(self):
         """Return (sx, sy, dx, dy, dim) for the current overlay frame."""
-        now = self.window._pack_now()
+        now = self._now()
         age = now - self._overlay_start
         t = min(age / self._overlay_duration, 1.0) if self._overlay_duration > 0 else 1.0
 
