@@ -2,7 +2,7 @@ audio:
   sample_rate: 16000
   chunk_duration_ms: 100
   buffer_seconds: 3
-  device_index: 6
+  device_index: null  # null = auto-detect, integer = use specific device
 
 vad:
   threshold: 21000.0
@@ -17,6 +17,7 @@ asr:
   device: "cpu"
   compute_type: "int8"
   language: "en"
+  drop_after_warmup_sec: 5.0  # skip ASR results within this window after warm-load
 
 overlay:
   enabled: true
