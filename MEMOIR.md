@@ -264,6 +264,7 @@ agent_sign: ['human/mimas', 'opencode/current']
   1. **VoiceDeviceRow 抽出自洽 widget**：將 `settings_ui.py` 中的 device selection 邏輯（QLabel + QPushButton + 對話框開啟 + update_device）封裝為獨立的 `VoiceDeviceRow(QtWidgets.QWidget)` 類別，放在 `voice_device_dialog.py` 中。`settings_ui.py` 僅需 2 行：`from mycat.voice_device_dialog import VoiceDeviceRow` 和 `layout.addWidget(VoiceDeviceRow(...))`。
   2. **VoiceBridge auto-wire callbacks**：將 `_trigger_sleep_animation` 搬入 `VoiceBridge._window_sleep_animation()`（透過 `self.window.*` 存取 window 內部），並在 `VoiceBridge.__init__` 自動接線。`main.py` 不再需要手動呼叫 `set_sleep_callback()` 和 `set_reminder_callback()`。
   3. **Dead code 清理**：刪除 `main.py` 中遺留的 `_on_voice_intent_detected`（VoiceBridge 已透過 signal/slot 內部處理 intents）。
-  4. **封裝 private access**：新增 `VoiceBridge.is_bubble_active` property，`main.py` 不再直接存取 `_bubble`。
-  5. **Wayland tray fallback**：在 `setup_tray` 中偵測 `WAYLAND_DISPLAY` 環境變數，自動跳過 system tray（Sway 不支援 tray 右鍵選單），讓右鍵選單正確顯示 Quit。
-* **結果**：`main.py` voice intrusion 從 ~35 行降至 ~5 行（僅 init + 3 處 1 行侵入點：closeEvent / paintEvent / pack_tick）。`settings_ui.py` intrusion 從 ~20 行降至 2 行。
+   4. **封裝 private access**：新增 `VoiceBridge.is_bubble_active` property，`main.py` 不再直接存取 `_bubble`。
+   5. **Wayland tray fallback**：在 `setup_tray` 中偵測 `WAYLAND_DISPLAY` 環境變數，自動跳過 system tray（Sway 不支援 tray 右鍵選單），讓右鍵選單正確顯示 Quit。
+   6. **消除建構子污染**：`mock_voice` / `test_wav` 原是 `PixelCatWindow` 建構子參數，僅為轉送給 `VoiceBridge`。改由 `VoiceBridge._init_worker()` 直接讀取 `MYCAT_MOCK_VOICE` / `MYCAT_TEST_WAV` 環境變數。`main()` 在解析 CLI args 後設 env var，`PixelCatWindow` 不再需要知道這兩個參數。
+* **結果**：`main.py` voice intrusion 從 ~35 行降至最終 12 行（含 2 行 wayland_drag），`settings_ui.py` intrusion 從 ~20 行降至 2 行。詳見 `vendors/STAGE-1c.md`。
