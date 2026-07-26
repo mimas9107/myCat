@@ -1268,6 +1268,9 @@ class PixelCatWindow(QtWidgets.QWidget):
         if visible["activity"]:
             menu.addAction(i18n.tr("Activity…")).triggered.connect(self.open_activity_dialog)
 
+        voice_action = menu.addAction("Voice…")
+        voice_action.triggered.connect(self.open_voice_settings)
+
         # Shop temporarily hidden from the menu (work in progress). The dialog
         # and its handler stay in the codebase; re-enable by uncommenting:
         # shop_action = menu.addAction("Open Shop…")
@@ -1456,6 +1459,21 @@ class PixelCatWindow(QtWidgets.QWidget):
             return
         dialog = SettingsDialog(self, config_path=CFG_FILE, main_window=self)
         self.place_beside_cat(dialog)
+        dialog.exec()
+
+    def open_voice_settings(self) -> None:
+        """Open the Voice settings dialog (input device selection)."""
+        try:
+            if __package__:
+                from .settings_ui import SettingsDialog
+            else:
+                import importlib
+
+                SettingsDialog = importlib.import_module("mycat.settings_ui").SettingsDialog
+        except Exception:
+            logger.exception("Failed to import settings dialog")
+            return
+        dialog = SettingsDialog(self, config_path=CFG_FILE, main_window=self)
         dialog.exec()
 
     def open_github_settings(self) -> None:

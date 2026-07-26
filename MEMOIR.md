@@ -223,3 +223,26 @@
   * `voice_animation.py`：QTimer、`_reset_idle_timer`、`_on_idle_yawn`。
   * `voice_bridge.py`：讀取 config 傳入 `idle_yawn_after`。
   * `config.yaml`：`overlay.idle_yawn_after: 30`。
+
+### [功能新增] 輸入裝置自動偵測與 ASR 暖啟動機制 (TASK-1c)
+* **日期**：2026-07-26
+* **問題描述**：
+  1. `device_index` 為硬編碼，跨使用者/跨設備須手動修改 config。
+  2. ASR 模型為 lazy-load，第一次辨識耗時 2-5 秒，使用者體驗差。
+  3. 無 GUI 讓使用者選擇音訊裝置。
+  4. 貓咪 sleep 時仍佔用 ASR 記憶體。
+* **解法**：
+  1. **輸入裝置偵測**：`audio_stream.py` 新增 `list_devices()` 列舉所有輸入裝置、`prefer_suitable_device()` 自動過濾 raw ALSA、優先 PulseAudio/PipeWire。
+  2. **Auto-detect**：`config.yaml` 的 `audio.device_index` 改為 `null` 表示自動偵測。`AudioStreamManager.__init__` 收到 `None` 時呼叫 `prefer_suitable_device()`。
+  3. **ASR Warm-load**：`asr_pipeline.py` 新增 `load()` / `unload()` 方法。`voice_worker.py` 在 `run()` 開頭呼叫 `self.asr.load()` 提前載入模型。
+  4. **Drop Window**：`config.yaml` 新增 `asr.drop_after_warmup_sec: 5.0`。`voice_worker.py` 新增 `_warmup_start_time`，在暖啟動後 5 秒內的 ASR 結果會被跳過（log 並 continue）。
+  5. **SLEEP → unload**：當 `intent.type == "SLEEP"` 時，`voice_worker.py` 呼叫 `self.asr.unload()` 釋放記憶體。下次 VAD 觸發時自動 reload。
+  6. **Ring Buffer 重構**：`audio_stream.py` 新增 `get_recent_chunk(duration_sec)` 取代重複的 slice 邏輯。
+* **驗證結果**：
+  * `list_devices()` 可列出所有輸入裝置（index, name, channels, sample_rate）。
+  * `prefer_suitable_device()` 在 Linux 上正確跳過 `hw:` 裝置、優先選 PulseAudio。
+  * 啟動時 `voice_worker.py` log 顯示 `[ASRPipeline] Loading faster-whisper model...`。
+  * SLEEP intent 觸發後 `self.model = None`，記憶體釋放。
+* **待完成**：
+  * GUI 持久化 (`voice_device.json`) 與 `settings_ui.py` 下拉選單。
+  * `voice_bridge.py` 監聽 device 變更並熱重啟 worker。

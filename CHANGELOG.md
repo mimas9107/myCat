@@ -28,9 +28,13 @@ All notable changes to this project are documented in this file.
 ### Fixed
 - **The Linux launcher icon actually updates when the app updates.** `install_desktop_entry()` copied the icon to a single stable path (`~/.local/share/mycat/icon.png`) and overwrote it in place. Desktop icon caches (GNOME/KDE) key on the path and kept serving the old bitmap, so after a `pip install -U mycat` the applications-menu / taskbar icon stayed on the previous cat. The copy is now named after the icon's content hash (`icon-<hash>.png`) and referenced from `Icon=`, so a changed icon lands at a fresh path the cache can't stale; older copies (and the legacy `icon.png`) are cleaned up. The running app's in-memory window icon still needs a restart, as before (branch `fix/desktop-icon-cache-bust`).
 
-## [Unreleased]
+## [0.1.26+voice.1] - 2026-07-26
 
 ### Added
+- **Voice Input Device Auto-Detection (TASK-1c)**: 新增 `audio_stream.py` 的 `list_devices()` 與 `prefer_suitable_device()`，自動過濾 raw ALSA、優先 PulseAudio/PipeWire。`config.yaml` 的 `audio.device_index` 改為 `null` 表示自動偵測。
+- **ASR Warm-Load (TASK-1c)**: `asr_pipeline.py` 新增 `load()` / `unload()` 方法。`voice_worker.py` 在啟動時提前載入模型，暖啟動後 5 秒內的辨識結果會被 drop (`drop_after_warmup_sec`)。SLEEP intent 觸發時自動 unload 釋放記憶體，下次 VAD 觸發時自動 reload。
+- **Voice Device GUI & Persistence (TASK-1c)**: 新增 `voice_assistant/device_store.py` 持久化 `voice_device.json`。新增 `voice_device_dialog.py` 音訊裝置選擇對話框。`settings_ui.py` 整合 Voice 選單。右鍵選單新增 "Voice…" 項目。
+- **Ring Buffer Refactor (TASK-1c)**: `audio_stream.py` 新增 `get_recent_chunk(duration_sec)` 取代重複的 slice 邏輯。
 - **VoiceBridge 整合層**: 新建 `mycat/voice_bridge.py`，將 VoiceWorker、SpeechBubble、VoiceAnimationController 封裝為單一入口。`main.py` voice 相關改動從 ~120 行散佈降至 ~15 行 delegation，大幅降低 rebase 衝突風險。`voice_animation.py` 改用 `time_fn` callback 注入，不再直接存取 window private API。新增 `VOICE_BRIDGE_DEBUG=1` 環境變數追蹤 callback 路徑。
 - **Wayland Native Window Dragging**: 新增 `mycat/wayland_drag.py` 插件，透過 Qt 的 `QWindow.startSystemMove()` 與 `QObject.installEventFilter` 以非侵入式方式支援 Wayland 合成器 (Sway, GNOME Mutter, KDE, Hyprland) 的原生視窗拖曳，完全不干擾 `main.py` 主線邏輯。
 - **Voice Animation Overlay**:新建 `mycat/voice_animation.py`，`VoiceAnimationController` 以 QPainter 程序化變形回應語音事件。Wake word → 彈跳膨脹，Transcribing → 歪頭，Intent → 小彈跳。SLEEP intent 改為觸發 sleep 動畫而非直接 close。

@@ -229,3 +229,5 @@ Thank you for reading to the end! 😸🐾
 > - 😴 **打哈欠 (yawn.png)** — 語音靜默 30 秒後自動觸發
 > - 💬 **氣泡回覆** — Ollama 回應以獨立浮動氣泡 (xdg_popup) 顯示，不受視窗管理限制
 > - 😺 **表情疊圖修復** — 語音 overlay 活躍時自動隱藏靜態臉與瞳孔，不疊圖
+> - 🎤 **輸入裝置自動偵測** — 啟動時自動選擇 PulseAudio/PipeWire，支援 GUI 手動切換
+> - ⚡ **ASR 暖啟動** — 啟動時預載模型，SLEEP 時釋放記憶體
