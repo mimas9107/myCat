@@ -33,6 +33,18 @@ class ASRPipeline:
         except Exception as e:
             print(f"[ASRPipeline] Error loading faster-whisper: {e}")
 
+    def load(self):
+        """Explicitly loads the ASR model (warm-start)."""
+        if self._initialized and self.model is not None:
+            return
+        self._ensure_model()
+
+    def unload(self):
+        """Explicitly unloads the ASR model to free memory."""
+        self.model = None
+        self._initialized = False
+        print("[ASRPipeline] Model unloaded.")
+
     def transcribe(self, audio_np: np.ndarray) -> str:
         """Transcribes PCM 16-bit 16kHz audio array into text string."""
         self._ensure_model()
