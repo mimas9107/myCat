@@ -536,8 +536,6 @@ class PixelCatWindow(QtWidgets.QWidget):
         available_images: list[str] = None,
         gif_data: bytes = b"",
         pack: "char_pack.CharPack | None" = None,
-        mock_voice: bool = False,
-        test_wav: str | None = None,
     ) -> None:
         platform_name = ""
         app_instance = QtWidgets.QApplication.instance()
@@ -647,9 +645,7 @@ class PixelCatWindow(QtWidgets.QWidget):
 
         # Voice Assistant — single bridge (debug: VOICE_BRIDGE_DEBUG=1)
         from mycat.voice_bridge import VoiceBridge
-        self.voice_bridge = VoiceBridge(
-            self, mock_voice=mock_voice, test_wav=test_wav,
-        )
+        self.voice_bridge = VoiceBridge(self)
 
         # Wayland native drag handler (plugin hook)
         try:
@@ -1932,14 +1928,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mock-voice",
         action="store_true",
-        help="Use MockVoiceWorker instead of real VoiceWorker (for testing voice animations)",
+        help="Use MockVoiceWorker instead of real VoiceWorker (sets MYCAT_MOCK_VOICE=1)",
     )
     parser.add_argument(
         "--test-wav",
         type=str,
         default=None,
         metavar="FILE",
-        help="Feed a WAV file through ASR→Intent→Ollama (use with --mock-voice)",
+        help="Feed a WAV file through ASR→Intent→Ollama (sets MYCAT_TEST_WAV=FILE)",
     )
     llm.add_arguments(parser)
     return parser.parse_args()
@@ -2431,7 +2427,13 @@ def main() -> None:
     i18n.load_language(CFG_FILE)
 
     llm_context = llm.initialize(args)
-    
+
+    # VoiceBridge reads these from env instead of constructor params
+    if args.mock_voice:
+        os.environ["MYCAT_MOCK_VOICE"] = "1"
+    if args.test_wav:
+        os.environ["MYCAT_TEST_WAV"] = args.test_wav
+
     # Suppress Qt D-Bus warnings on Linux
     os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.theme.gnome=false")
     os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", "")
@@ -2528,16 +2530,14 @@ def main() -> None:
         if zip_path and char_pack.is_new_pack(zip_path):
             pack = char_pack.load_pack(zip_path)
             window = PixelCatWindow(pack.static, None, args.wait, Path(zip_path).stem,
-                                    available_images, b"", pack=pack,
-                                    mock_voice=args.mock_voice, test_wav=args.test_wav)
+                                    available_images, b"", pack=pack)
         else:
             png_pixmap, gif_movie, file_name, gif_data = load_packaged_images(args.image, default_image)
             logger.info(
                 f"Playing {file_name}.zip (first frame) "
                 f"{png_pixmap.width()}x{png_pixmap.height()} for {args.wait:.1f}s"
             )
-            window = PixelCatWindow(png_pixmap, gif_movie, args.wait, file_name, available_images, gif_data,
-                                    mock_voice=args.mock_voice, test_wav=args.test_wav)
+            window = PixelCatWindow(png_pixmap, gif_movie, args.wait, file_name, available_images, gif_data)
     except Exception as e:
         logger.error(f"Error loading char: {e}")
         sys.exit(2)
