@@ -30,8 +30,7 @@ def _dbg(msg: str, *args) -> None:
 class VoiceBridge(QtCore.QObject):
     """Owns voice worker, bubble, animation; exposes minimal API to main.py."""
 
-    def __init__(self, window, mock_voice: bool = False,
-                 test_wav: str | None = None, parent=None) -> None:
+    def __init__(self, window, parent=None) -> None:
         super().__init__(parent)
         self.window = window
         self._worker = None
@@ -45,7 +44,7 @@ class VoiceBridge(QtCore.QObject):
         self._reminder_callback = None
 
         self._init_bubble()
-        self._init_worker(mock_voice, test_wav)
+        self._init_worker()
         self._init_animation()
         self._auto_wire_callbacks()
 
@@ -58,7 +57,9 @@ class VoiceBridge(QtCore.QObject):
             _dbg("BubblePopup unavailable: %s", exc)
             self._bubble = None
 
-    def _init_worker(self, mock_voice: bool, test_wav: str | None) -> None:
+    def _init_worker(self) -> None:
+        mock_voice = os.environ.get("MYCAT_MOCK_VOICE", "0") == "1"
+        test_wav = os.environ.get("MYCAT_TEST_WAV")
         try:
             if mock_voice:
                 from mycat.mock_voice import MockVoiceWorker

@@ -46,6 +46,8 @@ All notable changes to this project are documented in this file.
 - **Dead code 清理**: 刪除 `main.py` 中未被呼叫的 `_on_voice_intent_detected` 方法。
 - **封裝 private access**: `refresh_shape_mask` 改透過 `VoiceBridge.is_bubble_active` property 存取，不再直接存取 `_bubble`。
 - **Wayland tray 偵測**: `setup_tray` 在 Wayland 環境（Sway）自動跳過 system tray（右鍵選單不可用），讓右鍵選單正確顯示 Quit。
+- **消除建構子污染**: 將 `mock_voice` / `test_wav` 從 `PixelCatWindow` 建構子移除，改由 `VoiceBridge` 讀取 `MYCAT_MOCK_VOICE` / `MYCAT_TEST_WAV` 環境變數。`main.py` 不再轉送 CLI 參數。
+- **入侵實測報告**: 新增 `vendors/STAGE-1c.md` 記錄 `main.py` 最終 12 行侵入點明細。
 - **文件版本同步**: 所有文件新增 YAML 標頭，版本統一為 `0.2.0`。
 
 ## [0.1.26+voice.1] - 2026-07-26
