@@ -90,6 +90,6 @@ class VoiceDeviceDialog(QtWidgets.QDialog):
     def get_device(parent=None, current_device_index=None) -> int | None:
         """Show dialog and return selected device index, or None if cancelled."""
         dialog = VoiceDeviceDialog(parent, current_device_index)
-        if dialog.exec() == dialog.Accepted:
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             return dialog.selected_device_index()
         return None

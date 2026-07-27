@@ -2,8 +2,8 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/07/26"
-project_version: "0.2.0"
+modified_date: "2026/07/27"
+project_version: "0.2.1"
 document_version: "1.0.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
@@ -268,3 +268,17 @@ agent_sign: ['human/mimas', 'opencode/current']
    5. **Wayland tray fallback**：在 `setup_tray` 中偵測 `WAYLAND_DISPLAY` 環境變數，自動跳過 system tray（Sway 不支援 tray 右鍵選單），讓右鍵選單正確顯示 Quit。
    6. **消除建構子污染**：`mock_voice` / `test_wav` 原是 `PixelCatWindow` 建構子參數，僅為轉送給 `VoiceBridge`。改由 `VoiceBridge._init_worker()` 直接讀取 `MYCAT_MOCK_VOICE` / `MYCAT_TEST_WAV` 環境變數。`main()` 在解析 CLI args 後設 env var，`PixelCatWindow` 不再需要知道這兩個參數。
 * **結果**：`main.py` voice intrusion 從 ~35 行降至最終 12 行（含 2 行 wayland_drag），`settings_ui.py` intrusion 從 ~20 行降至 2 行。詳見 `vendors/STAGE-1c.md`。
+
+### [Bugfix] VoiceDeviceDialog `Accepted` vs `accepted` 屬性錯誤
+* **日期**：2026/07/27
+* **問題描述**：
+  右鍵選單 → Voice → Select Device 時拋出 `AttributeError: 'VoiceDeviceDialog' object has no attribute 'Accepted'`。PySide6 的 `QDialog.exec()` 回傳 `DialogCode` enum，`dialog.Accepted` 是在問「實例上有沒有叫 `Accepted` 的屬性？」——當然沒有，enum 要到類別上取 `QtWidgets.QDialog.DialogCode.Accepted`。
+* **解法**：
+  `voice_device_dialog.py:93` 改為 `dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted`。
+* **Runtime 裝置切換流程驗證**：
+  分析 `VoiceWorker.update_device()` → `AudioStreamManager.stop()` → 換 index → `start()` → `device_store.save_device_index()` 的完整流程，確認：
+  1. **Dialog 只選取不設定**：`VoiceDeviceDialog.get_device()` 回傳 index，真正的設定在 `_open_dialog()` 呼叫 `update_device()` 完成。
+  2. **下拉選了有觸發寫入**：OK 後呼叫 `update_device(selected)`，內部會 `device_store.save_device_index()` 存到 `~/.config/mycat/voice_device.json`。
+  3. **Runtime 佔用不會衝突**：`stop()` 完整關閉舊串流 + `p.terminate()` 釋放 PyAudio 資源後才 `start()` 開新裝置。
+  4. **背景 thread 安全**：`stop()`/`start()` 都是同步 blocking call，GIL 保護下不會同時讀寫 ring buffer。
+  5. **小隱患**：`stop()` 不清 ring buffer，切換後 worker 可能先拿到舊裝置殘留音訊（~3 秒），下一次迴圈即被新資料覆蓋，實務影響極小。
