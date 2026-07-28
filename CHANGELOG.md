@@ -1,13 +1,3 @@
----
-name: "CHANGELOG.md"
-description: "專案變更日誌"
-created_date: "2026/05/01"
-modified_date: "2026/07/27"
-project_version: "0.2.3"
-document_version: "1.0.0"
-agent_sign: ['human/mimas', 'opencode/current']
----
-
 # Changelog
 
 All notable changes to this project are documented in this file.
@@ -37,72 +27,6 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 - **The Linux launcher icon actually updates when the app updates.** `install_desktop_entry()` copied the icon to a single stable path (`~/.local/share/mycat/icon.png`) and overwrote it in place. Desktop icon caches (GNOME/KDE) key on the path and kept serving the old bitmap, so after a `pip install -U mycat` the applications-menu / taskbar icon stayed on the previous cat. The copy is now named after the icon's content hash (`icon-<hash>.png`) and referenced from `Icon=`, so a changed icon lands at a fresh path the cache can't stale; older copies (and the legacy `icon.png`) are cleaned up. The running app's in-memory window icon still needs a restart, as before (branch `fix/desktop-icon-cache-bust`).
-
-## [0.2.3] - 2026-07-27
-
-### Fixed
-- **GNOME Wayland 氣泡垂直間距**：調整視窗高度預留空間，確保氣泡不重疊小貓。
-- **移除 react overlay 彈跳**：`voice_bridge.py` 移除 `set_overlay("react", 0.5)`，避免小貓每次回應縮放抖動。
-
-## [0.2.2] - 2026-07-27
-
-### Fixed
-- **GNOME Wayland 語音氣泡支援 (TASK-1d)**：修復 `BubblePopup` 在 GNOME Wayland (mutter) 下無法顯示的問題。
-  - Qt.ToolTip (xdg_popup) 在 GNOME 不渲染；Qt.Window + parent 會 hang；Qt.Window + parent=None 的 `move()` 被 mutter 忽略。
-  - 最終方案：`voice_bridge.py` 偵測 GNOME Wayland 時使用 in-window `SpeechBubble` 以 QPainter 將氣泡繪製在貓咪視窗右上角，完全避開視窗定位問題。
-  - Sway/X11 路徑完全不受影響。
-
-### Added
-- `speech_bubble.py`: `paint()` 新增 `pos` 參數支援手動定位；新增 `bubble_size()` 方法。
-- `voice_bridge.py`: GNOME Wayland 偵測、in-window SpeechBubble 繪製路徑。
-
-## [0.2.1] - 2026-07-27
-
-### Fixed
-- **VoiceDeviceDialog AttributeError**：修復右鍵選單設定音訊裝置時 `AttributeError: 'VoiceDeviceDialog' object has no attribute 'Accepted'`。PySide6 的 `QDialog.exec()` 回傳 `DialogCode` enum，需用 `QtWidgets.QDialog.DialogCode.Accepted` 而非 `dialog.Accepted`。同步確認裝置切換流程（stop → 換 index → start → save）可在 runtime 正常運作。
-
-## [0.2.0] - 2026-07-26
-
-### Refactored
-- **VoiceDeviceRow 封裝 (TASK-1c)**: 將 `settings_ui.py` 中 voice device 相關 UI 與邏輯抽出為獨立 `VoiceDeviceRow` widget，入侵從 ~20 行降至 2 行。
-- **VoiceBridge auto-wire callbacks**: 將 `_trigger_sleep_animation` 從 `main.py` 搬入 `VoiceBridge._window_sleep_animation`，並透過 `_auto_wire_callbacks` 自動接線 `sleep` 與 `reminder` callback，無需 `main.py` 手動註冊。`main.py` voice intrusion 從 ~35 行降至 ~5 行。
-- **Dead code 清理**: 刪除 `main.py` 中未被呼叫的 `_on_voice_intent_detected` 方法。
-- **封裝 private access**: `refresh_shape_mask` 改透過 `VoiceBridge.is_bubble_active` property 存取，不再直接存取 `_bubble`。
-- **Wayland tray 偵測**: `setup_tray` 在 Wayland 環境（Sway）自動跳過 system tray（右鍵選單不可用），讓右鍵選單正確顯示 Quit。
-- **消除建構子污染**: 將 `mock_voice` / `test_wav` 從 `PixelCatWindow` 建構子移除，改由 `VoiceBridge` 讀取 `MYCAT_MOCK_VOICE` / `MYCAT_TEST_WAV` 環境變數。`main.py` 不再轉送 CLI 參數。
-- **入侵實測報告**: 新增 `vendors/STAGE-1c.md` 記錄 `main.py` 最終 12 行侵入點明細。
-- **文件版本同步**: 所有文件新增 YAML 標頭，版本統一為 `0.2.0`。
-
-## [0.1.26+voice.1] - 2026-07-26
-
-### Added
-- **Voice Input Device Auto-Detection (TASK-1c)**: 新增 `audio_stream.py` 的 `list_devices()` 與 `prefer_suitable_device()`，自動過濾 raw ALSA、優先 PulseAudio/PipeWire。`config.yaml` 的 `audio.device_index` 改為 `null` 表示自動偵測。
-- **ASR Warm-Load (TASK-1c)**: `asr_pipeline.py` 新增 `load()` / `unload()` 方法。`voice_worker.py` 在啟動時提前載入模型，暖啟動後 5 秒內的辨識結果會被 drop (`drop_after_warmup_sec`)。SLEEP intent 觸發時自動 unload 釋放記憶體，下次 VAD 觸發時自動 reload。
-- **Voice Device GUI & Persistence (TASK-1c)**: 新增 `voice_assistant/device_store.py` 持久化 `voice_device.json`。新增 `voice_device_dialog.py` 音訊裝置選擇對話框。`settings_ui.py` 整合 Voice 選單。右鍵選單新增 "Voice…" 項目。
-- **Ring Buffer Refactor (TASK-1c)**: `audio_stream.py` 新增 `get_recent_chunk(duration_sec)` 取代重複的 slice 邏輯。
-- **VoiceBridge 整合層**: 新建 `mycat/voice_bridge.py`，將 VoiceWorker、SpeechBubble、VoiceAnimationController 封裝為單一入口。`main.py` voice 相關改動從 ~120 行散佈降至 ~15 行 delegation，大幅降低 rebase 衝突風險。`voice_animation.py` 改用 `time_fn` callback 注入，不再直接存取 window private API。新增 `VOICE_BRIDGE_DEBUG=1` 環境變數追蹤 callback 路徑。
-- **Wayland Native Window Dragging**: 新增 `mycat/wayland_drag.py` 插件，透過 Qt 的 `QWindow.startSystemMove()` 與 `QObject.installEventFilter` 以非侵入式方式支援 Wayland 合成器 (Sway, GNOME Mutter, KDE, Hyprland) 的原生視窗拖曳，完全不干擾 `main.py` 主線邏輯。
-- **Voice Animation Overlay**:新建 `mycat/voice_animation.py`，`VoiceAnimationController` 以 QPainter 程序化變形回應語音事件。Wake word → 彈跳膨脹，Transcribing → 歪頭，Intent → 小彈跳。SLEEP intent 改為觸發 sleep 動畫而非直接 close。
-- **Mock Voice Worker**:新建 `mycat/mock_voice.py`，用 `--mock-voice` 啟動時以自動循環的 status 事件模擬語音流程，方便測試動畫反應。
-- **Voice Assistant Planning**: Documented architectural plans and tasks (`PLAN-1a.md`, `TASK-1a.md`) for integrating a fully local Voice Assistant using PyAudio, Edge Impulse (wake word), and faster-whisper.
-- **Voice Animation Planning**:新增 `PLAN-1b.md` 與 `TASK-1b.md`，定義語音→動畫整合的架構規劃與任務分配。
-- **Project Documentation**: Created `AGENTS.md` (AI agent collaboration rules), `SPEC.md` (voice technology specifications), and `MEMOIR.md` (development history and architectural decisions).
-- **CharPack Debug Logging**:新增 `_fsm_debug_tick` 節流式條件檢查 log，每3秒輸出完整狀態機條件（sleep/yawn/idle/blink/hungry），方便確認素材缺失或邏輯問題。
-- **VoiceCharPack**: 新建 `mycat/voice_char_pack.py`，從角色 ZIP 中載入語音專屬素材 (`think.png`, `listen.png`, `yawn.png`)，自動匹配 char render scale。無素材時優雅降級。
-- **BubblePopup 浮動氣泡**: 新建 `mycat/bubble_popup.py`，使用 `Qt.ToolTip` (Wayland 上為 xdg_popup) 實作獨立浮動氣泡視窗。不受 Sway 平鋪管理，自動判斷上方/下方空間，尾巴方向隨之調整，8 秒自動關閉。`cat2.zip` 加入 `think.png`/`listen.png`/`yawn.png` 正式素材。
-- **Idle Yawn Timer**: VoiceAnimationController 新增 idle yawn 計時器，語音靜默 `idle_yawn_after` 秒後觸發 yawn overlay（預設 30s）。可透過 `config.yaml` 的 `overlay.idle_yawn_after` 設定或設為 0 關閉。
-
-### Changed
-- **README.md Voice Preview 移至底部 Upcoming Features section**: 減少與上游的 README 衝突機率。
-- **voice_assistant lazy import**: `main.py` module-level `voice_assistant` import 改為 VoiceBridge 內 lazy import，避免 startup crash 風險。
-- **SpeechBubble 改為 BubblePopup**: 氣泡從 `main.py` 內的 QPainter 繪製改為獨立 `Qt.ToolTip` 浮動視窗，徹底解決 Sway 浮動模式下氣泡被 widget buffer 裁切的問題。`voice_bridge.py` 相應簡化 `apply_paint`/`should_repaint`/`get_bubble_bounds`。
-- **main.py paintEvent 簡化**: 移除 `bubble_rect`、`_set_composite_mask`、`_bubble_expanded`/`_original_size` 等視窗擴張邏輯。氣泡不再需要 widget resize。當 VoiceCharPack overlay sprite 活躍時跳過 `current_pixmap` 與瞳孔繪製以避免疊圖。
-- **VoiceBridge QThread Signal 連接**: `_Worker` signal 改為直接連接 method（移除 lambda 中介），避免跨執行緒 QTimer 崩潰 (`QObject::startTimer: Timers cannot be started from another thread`)。
-
-### Fixed
-- **Wayland 浮動模式下氣泡顯示**: 獨立 BubblePopup 不再依賴 widget buffer 大小，Sway float toggle (frameless) 下氣泡正常浮出。
-- **X11 無 compositor 氣泡顯示**: 同上獨立視窗方案，不再需要複雜的 composite mask 計算。
-- **Voice overlay sprite 疊圖**: `overlay_replaces_face` property 讓 `think`/`listen`/`yawn` 等 full-face sprite 活躍時跳過靜態貓臉與眼睛繪製。
 
 ## [0.1.27] - 2026-07-27
 
@@ -356,3 +280,94 @@ All notable changes to this project are documented in this file.
 
 ### Removed
 - `run_windows.bat` (replaced by the minimal `run.bat`).
+
+
+---
+name: "CHANGELOG.md"
+description: "專案變更日誌"
+created_date: "2026/05/01"
+modified_date: "2026/07/27"
+project_version: "0.2.3"
+document_version: "1.0.0"
+agent_sign: ['human/mimas', 'opencode/current']
+---
+
+# myCat Voice Assistant Fork
+
+這個分支為 myCat 加入語音助理功能，包括本機端語音喚醒、語音轉寫、意圖解析、動畫回饋等。
+
+主要分支功能：
+- **Voice Assistant 語音助理** (VAD / Wake Word / ASR / Intent Parsing)
+- **VoiceBridge 整合層** — 語音辨識、動畫、氣泡顯示封裝為單一入口
+- **Voice Animation Overlay** — Wake word / Transcribing / Intent 對應即時動畫
+- **BubblePopup 浮動氣泡** — 獨立 xdg_popup 視窗，不受 WM 限制
+- **GNOME Wayland 支援** — in-window SpeechBubble QPainter 繪製
+- **Wayland 原生視窗拖曳** — startSystemMove 支援
+
+---
+
+## [0.2.3] - 2026-07-27
+
+### Fixed
+- **GNOME Wayland 氣泡垂直間距**：調整視窗高度預留空間，確保氣泡不重疊小貓。
+- **移除 react overlay 彈跳**：`voice_bridge.py` 移除 `set_overlay("react", 0.5)`，避免小貓每次回應縮放抖動。
+
+## [0.2.2] - 2026-07-27
+
+### Fixed
+- **GNOME Wayland 語音氣泡支援 (TASK-1d)**：修復 `BubblePopup` 在 GNOME Wayland (mutter) 下無法顯示的問題。
+  - Qt.ToolTip (xdg_popup) 在 GNOME 不渲染；Qt.Window + parent 會 hang；Qt.Window + parent=None 的 `move()` 被 mutter 忽略。
+  - 最終方案：`voice_bridge.py` 偵測 GNOME Wayland 時使用 in-window `SpeechBubble` 以 QPainter 將氣泡繪製在貓咪視窗右上角，完全避開視窗定位問題。
+  - Sway/X11 路徑完全不受影響。
+
+### Added
+- `speech_bubble.py`: `paint()` 新增 `pos` 參數支援手動定位；新增 `bubble_size()` 方法。
+- `voice_bridge.py`: GNOME Wayland 偵測、in-window SpeechBubble 繪製路徑。
+
+## [0.2.1] - 2026-07-27
+
+### Fixed
+- **VoiceDeviceDialog AttributeError**：修復右鍵選單設定音訊裝置時 `AttributeError: 'VoiceDeviceDialog' object has no attribute 'Accepted'`。PySide6 的 `QDialog.exec()` 回傳 `DialogCode` enum，需用 `QtWidgets.QDialog.DialogCode.Accepted` 而非 `dialog.Accepted`。同步確認裝置切換流程（stop → 換 index → start → save）可在 runtime 正常運作。
+
+## [0.2.0] - 2026-07-26
+
+### Refactored
+- **VoiceDeviceRow 封裝 (TASK-1c)**: 將 `settings_ui.py` 中 voice device 相關 UI 與邏輯抽出為獨立 `VoiceDeviceRow` widget，入侵從 ~20 行降至 2 行。
+- **VoiceBridge auto-wire callbacks**: 將 `_trigger_sleep_animation` 從 `main.py` 搬入 `VoiceBridge._window_sleep_animation`，並透過 `_auto_wire_callbacks` 自動接線 `sleep` 與 `reminder` callback，無需 `main.py` 手動註冊。`main.py` voice intrusion 從 ~35 行降至 ~5 行。
+- **Dead code 清理**: 刪除 `main.py` 中未被呼叫的 `_on_voice_intent_detected` 方法。
+- **封裝 private access**: `refresh_shape_mask` 改透過 `VoiceBridge.is_bubble_active` property 存取，不再直接存取 `_bubble`。
+- **Wayland tray 偵測**: `setup_tray` 在 Wayland 環境（Sway）自動跳過 system tray（右鍵選單不可用），讓右鍵選單正確顯示 Quit。
+- **消除建構子污染**: 將 `mock_voice` / `test_wav` 從 `PixelCatWindow` 建構子移除，改由 `VoiceBridge` 讀取 `MYCAT_MOCK_VOICE` / `MYCAT_TEST_WAV` 環境變數。`main.py` 不再轉送 CLI 參數。
+- **入侵實測報告**: 新增 `vendors/STAGE-1c.md` 記錄 `main.py` 最終 12 行侵入點明細。
+- **文件版本同步**: 所有文件新增 YAML 標頭，版本統一為 `0.2.0`。
+
+## [0.1.26+voice.1] - 2026-07-26
+
+### Added
+- **Voice Input Device Auto-Detection (TASK-1c)**: 新增 `audio_stream.py` 的 `list_devices()` 與 `prefer_suitable_device()`，自動過濾 raw ALSA、優先 PulseAudio/PipeWire。`config.yaml` 的 `audio.device_index` 改為 `null` 表示自動偵測。
+- **ASR Warm-Load (TASK-1c)**: `asr_pipeline.py` 新增 `load()` / `unload()` 方法。`voice_worker.py` 在啟動時提前載入模型，暖啟動後 5 秒內的辨識結果會被 drop (`drop_after_warmup_sec`)。SLEEP intent 觸發時自動 unload 釋放記憶體，下次 VAD 觸發時自動 reload。
+- **Voice Device GUI & Persistence (TASK-1c)**: 新增 `voice_assistant/device_store.py` 持久化 `voice_device.json`。新增 `voice_device_dialog.py` 音訊裝置選擇對話框。`settings_ui.py` 整合 Voice 選單。右鍵選單新增 "Voice…" 項目。
+- **Ring Buffer Refactor (TASK-1c)**: `audio_stream.py` 新增 `get_recent_chunk(duration_sec)` 取代重複的 slice 邏輯。
+- **VoiceBridge 整合層**: 新建 `mycat/voice_bridge.py`，將 VoiceWorker、SpeechBubble、VoiceAnimationController 封裝為單一入口。`main.py` voice 相關改動從 ~120 行散佈降至 ~15 行 delegation，大幅降低 rebase 衝突風險。`voice_animation.py` 改用 `time_fn` callback 注入，不再直接存取 window private API。新增 `VOICE_BRIDGE_DEBUG=1` 環境變數追蹤 callback 路徑。
+- **Wayland Native Window Dragging**: 新增 `mycat/wayland_drag.py` 插件，透過 Qt 的 `QWindow.startSystemMove()` 與 `QObject.installEventFilter` 以非侵入式方式支援 Wayland 合成器 (Sway, GNOME Mutter, KDE, Hyprland) 的原生視窗拖曳，完全不干擾 `main.py` 主線邏輯。
+- **Voice Animation Overlay**:新建 `mycat/voice_animation.py`，`VoiceAnimationController` 以 QPainter 程序化變形回應語音事件。Wake word → 彈跳膨脹，Transcribing → 歪頭，Intent → 小彈跳。SLEEP intent 改為觸發 sleep 動畫而非直接 close。
+- **Mock Voice Worker**:新建 `mycat/mock_voice.py`，用 `--mock-voice` 啟動時以自動循環的 status 事件模擬語音流程，方便測試動畫反應。
+- **Voice Assistant Planning**: Documented architectural plans and tasks (`PLAN-1a.md`, `TASK-1a.md`) for integrating a fully local Voice Assistant using PyAudio, Edge Impulse (wake word), and faster-whisper.
+- **Voice Animation Planning**:新增 `PLAN-1b.md` 與 `TASK-1b.md`，定義語音→動畫整合的架構規劃與任務分配。
+- **Project Documentation**: Created `AGENTS.md` (AI agent collaboration rules), `SPEC.md` (voice technology specifications), and `MEMOIR.md` (development history and architectural decisions).
+- **CharPack Debug Logging**:新增 `_fsm_debug_tick` 節流式條件檢查 log，每3秒輸出完整狀態機條件（sleep/yawn/idle/blink/hungry），方便確認素材缺失或邏輯問題。
+- **VoiceCharPack**: 新建 `mycat/voice_char_pack.py`，從角色 ZIP 中載入語音專屬素材 (`think.png`, `listen.png`, `yawn.png`)，自動匹配 char render scale。無素材時優雅降級。
+- **BubblePopup 浮動氣泡**: 新建 `mycat/bubble_popup.py`，使用 `Qt.ToolTip` (Wayland 上為 xdg_popup) 實作獨立浮動氣泡視窗。不受 Sway 平鋪管理，自動判斷上方/下方空間，尾巴方向隨之調整，8 秒自動關閉。`cat2.zip` 加入 `think.png`/`listen.png`/`yawn.png` 正式素材。
+- **Idle Yawn Timer**: VoiceAnimationController 新增 idle yawn 計時器，語音靜默 `idle_yawn_after` 秒後觸發 yawn overlay（預設 30s）。可透過 `config.yaml` 的 `overlay.idle_yawn_after` 設定或設為 0 關閉。
+
+### Changed
+- **README.md Voice Preview 移至底部 Upcoming Features section**: 減少與上游的 README 衝突機率。
+- **voice_assistant lazy import**: `main.py` module-level `voice_assistant` import 改為 VoiceBridge 內 lazy import，避免 startup crash 風險。
+- **SpeechBubble 改為 BubblePopup**: 氣泡從 `main.py` 內的 QPainter 繪製改為獨立 `Qt.ToolTip` 浮動視窗，徹底解決 Sway 浮動模式下氣泡被 widget buffer 裁切的問題。`voice_bridge.py` 相應簡化 `apply_paint`/`should_repaint`/`get_bubble_bounds`。
+- **main.py paintEvent 簡化**: 移除 `bubble_rect`、`_set_composite_mask`、`_bubble_expanded`/`_original_size` 等視窗擴張邏輯。氣泡不再需要 widget resize。當 VoiceCharPack overlay sprite 活躍時跳過 `current_pixmap` 與瞳孔繪製以避免疊圖。
+- **VoiceBridge QThread Signal 連接**: `_Worker` signal 改為直接連接 method（移除 lambda 中介），避免跨執行緒 QTimer 崩潰 (`QObject::startTimer: Timers cannot be started from another thread`)。
+
+### Fixed
+- **Wayland 浮動模式下氣泡顯示**: 獨立 BubblePopup 不再依賴 widget buffer 大小，Sway float toggle (frameless) 下氣泡正常浮出。
+- **X11 無 compositor 氣泡顯示**: 同上獨立視窗方案，不再需要複雜的 composite mask 計算。
+- **Voice overlay sprite 疊圖**: `overlay_replaces_face` property 讓 `think`/`listen`/`yawn` 等 full-face sprite 活躍時跳過靜態貓臉與眼睛繪製。
