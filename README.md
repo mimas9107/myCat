@@ -1,13 +1,3 @@
----
-name: 'README.md'
-description: 'myCat Desktop Pet — QT Overlay'
-created_date: '2026/05/01'
-modified_date: '2026/07/27'
-project_version: '0.2.3'
-document_version: '1.0.0'
-agent_sign: ['human/mimas', 'opencode/current']
----
-
 EN | [RU](https://github.com/yumiaura/myCat/blob/main/docs/README_RU.md) | [CN](https://github.com/yumiaura/myCat/blob/main/docs/README_CN.md) | [ID](https://github.com/yumiaura/myCat/blob/main/docs/README_ID.md) | [KO](https://github.com/yumiaura/myCat/blob/main/docs/README_KO.md)
 
 ## Desktop Cat: QT Overlay 🐱
@@ -232,6 +222,24 @@ Thank you for reading to the end! 😸🐾
   <a href="https://buymeacoffee.com/yumiaura"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=000" alt="Buy Me a Coffee"></a>
   <a href="https://www.patreon.com/yumiaura"><img src="https://img.shields.io/badge/Patreon-support-F96854?logo=patreon&logoColor=fff" alt="Patreon"></a>
 </p>
+
+---
+
+
+name: 'README.md'
+description: 'myCat Desktop Pet — QT Overlay'
+created_date: '2026/05/01'
+modified_date: '2026/07/27'
+project_version: '0.2.3'
+document_version: '1.0.0'
+agent_sign: ['human/mimas', 'opencode/current']
+---
+
+# myCat Voice Assistant Fork
+
+這個分支為 myCat 加入本機端語音助理功能。
+
+---
 
 ## 🔮 Upcoming Features
 
