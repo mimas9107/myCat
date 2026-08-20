@@ -1,10 +1,10 @@
 ---
-name: "README.md"
-description: "myCat Desktop Pet — QT Overlay"
-created_date: "2026/05/01"
-modified_date: "2026/07/27"
-project_version: "0.2.1"
-document_version: "1.0.0"
+name: 'README.md'
+description: 'myCat Desktop Pet — QT Overlay'
+created_date: '2026/05/01'
+modified_date: '2026/07/27'
+project_version: '0.2.3'
+document_version: '1.0.0'
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -30,13 +30,14 @@ If you like it, maybe I'll share an [AnimeGirl](https://github.com/yumiaura/myca
 <img width="640" height="360" alt="image" src="https://github.com/user-attachments/assets/332494c9-8e39-4774-a85c-808839229106" />
 
 ### LLM Chat, Reminders, GitHub Integration & Tracking Activity
+
 <img width="280" height="200" alt="image" src="https://github.com/user-attachments/assets/9554bd7d-f06b-4acb-abb1-9c525103ac42" />
 <img width="280" height="200" alt="image" src="https://github.com/user-attachments/assets/022d5d14-fa75-4940-bbaa-ea6cd2a72a77" />
 <br />
 <img width="280" height="200" alt="image" src="https://github.com/user-attachments/assets/0a1d078e-77f4-4f16-a09f-a94c5deff086" />
 <img width="280" height="200" alt="image" src="https://github.com/user-attachments/assets/d9f4cce9-bf3c-4d64-a28e-1cac7d050a8c" />
 
-### 🎨 Create your own cat with AI 
+### 🎨 Create your own cat with AI
 
 Turn a few photos into your own cat. Right-click → **Chars → Create custom with AI…**,
 add 1–3 photos of the same person, **edit the prompt** (and a negative prompt for the
@@ -54,7 +55,6 @@ your own GPU.
 <br />
 <img width="270" alt="AI character — options" src="https://github.com/user-attachments/assets/6a67eb02-8ec0-4da9-a93c-0a16543f3679" />
 <img width="270" alt="Generated cat on the desktop" src="https://github.com/user-attachments/assets/848ff041-55b0-417c-aaf7-2759cc6a6c9a" />
-
 
 ## 🚀 Quick start
 
@@ -98,7 +98,7 @@ On **Linux** also install the Qt platform plugin once:
 sudo apt install -y libxcb-cursor0
 ```
 
-The activity diary can **count** key presses and clicks (never *which* keys) -
+The activity diary can **count** key presses and clicks (never _which_ keys) -
 it works out of the box on Windows, macOS and Linux/X11. Where global input
 access isn't available (e.g. Wayland) it degrades to recording the cursor path.
 
@@ -116,9 +116,9 @@ mycat                 # or, without installing:  python3 mycat/main.py
 ## ✨ Features
 
 - **Animated overlay** 🐱 - a frameless, always-on-top, draggable cat. Right-click for the menu (switch char, quit).
-- **Reminder** 🛩️ - set a message and a time (one-shot or daily) and the cat flies a little banner plane across the top of your screen. Right-click → *Reminder…* to set the message, direction, plane and color.
+- **Reminder** 🛩️ - set a message and a time (one-shot or daily) and the cat flies a little banner plane across the top of your screen. Right-click → _Reminder…_ to set the message, direction, plane and color.
 - **Chat (Ollama)** 💬 - talk to the cat through a **local [Ollama](https://ollama.com) model**, no account or API key needed (see below).
-- **Create with AI** 🎨 - turn 1–3 photos into a custom chibi cat character with your own OpenAI key (right-click → *Chars → Create custom with AI…*). Reference photos are never stored; the result is an ordinary local char you can reuse or delete.
+- **Create with AI** 🎨 - turn 1–3 photos into a custom chibi cat character with your own OpenAI key (right-click → _Chars → Create custom with AI…_). Reference photos are never stored; the result is an ordinary local char you can reuse or delete.
 - **Multilingual interface** 🌐 — the whole UI is available in **English, 한국어 (Korean), Русский (Russian) and 简体中文 (Simplified Chinese)**. Right-click the cat (or the tray) → under **Settings…** → **Language** to switch at any time; the choice is remembered. Translations live in plain `mycat/locale/*.json` files, so adding a language is just dropping in a file.
 
 ## 💬 Chat with the cat (Ollama)
@@ -191,23 +191,29 @@ docker compose -f docker-compose.mac.yml up
 ## 🔧 Troubleshooting
 
 **Cat appears in a black box / transparency doesn't work** 🫥
-- On X11 transparency needs a compositor. mycat falls back to clipping the window to the cat's outline when none is running, so this is rare; if you still see a box, enable display compositing (XFCE: *Window Manager Tweaks → Compositor*) or run a compositor such as `picom`.
+
+- On X11 transparency needs a compositor. mycat falls back to clipping the window to the cat's outline when none is running, so this is rare; if you still see a box, enable display compositing (XFCE: _Window Manager Tweaks → Compositor_) or run a compositor such as `picom`.
 
 **Window doesn't stay on top / doesn't show in the taskbar** 📌
+
 - Some window managers override "always on top" - restart the desktop session or check the WM settings.
 
 **Custom char doesn't load** ❌
+
 - The ZIP must contain exactly one valid `.gif`. Check the path and that the file isn't corrupted.
 
 **Position not saving** 💾
+
 - Make sure `~/.config/mycat/` exists and is writable; the config file is `~/.config/mycat/config.ini`.
 
 **Windows / launch issues** 🪟
+
 - Need Python ≥ 3.10 (`python --version`) for the pip install, or just use the prebuilt `.exe`.
 - From the repo you can also launch with `run.bat` (Windows) or `run.sh` (Linux/macOS).
 - Verify PySide6: `python -c "import PySide6; print('PySide6 OK')"`.
 
 **Permission errors** 🔒
+
 - On Linux prefer a user install over `sudo` (`pip install --user mycat`).
 
 ### 🤝 Getting help
@@ -230,10 +236,12 @@ Thank you for reading to the end! 😸🐾
 ## 🔮 Upcoming Features
 
 ![mycat2](./docs/mycat2.png) ![mycat2-2](./docs/mycat2-2.png)
+
 > **🚧 預告 / Future Feature Preview: Voice Assistant (myCat + Voice)**
->我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。敬請期待！
+> 我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。
 >
 > 目前已實作 `cat2` 角色包的語音反應（需自備 Ollama + faster-whisper）：
+>
 > - 👂 **聆聽 (listen.png)** — VAD 觸發時覆蓋貓臉，顯示聆聽姿態
 > - 🤔 **思考 (think.png)** — ASR 轉寫中，貓咪歪頭等待
 > - 😴 **打哈欠 (yawn.png)** — 語音靜默 30 秒後自動觸發

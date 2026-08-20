@@ -3,7 +3,7 @@ name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
 modified_date: "2026/07/27"
-project_version: "0.2.1"
+project_version: "0.2.3"
 document_version: "1.0.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
@@ -282,3 +282,33 @@ agent_sign: ['human/mimas', 'opencode/current']
   3. **Runtime 佔用不會衝突**：`stop()` 完整關閉舊串流 + `p.terminate()` 釋放 PyAudio 資源後才 `start()` 開新裝置。
   4. **背景 thread 安全**：`stop()`/`start()` 都是同步 blocking call，GIL 保護下不會同時讀寫 ring buffer。
   5. **小隱患**：`stop()` 不清 ring buffer，切換後 worker 可能先拿到舊裝置殘留音訊（~3 秒），下一次迴圈即被新資料覆蓋，實務影響極小。
+
+### [Bugfix] GNOME Wayland 語音氣泡：從 xdg_popup / xdg_toplevel → in-window QPainter
+* **日期**：2026-07-27
+* **問題描述**：
+  `BubblePopup`（獨立 QWidget 視窗）在 GNOME Wayland (mutter) 下無法正常顯示：
+  1. **Qt.ToolTip (xdg_popup)**：Sway 正常，GNOME 不渲染（log 顯示 shown 但螢幕看不見）。
+  2. **Qt.Window + parent**：`show()` 永久 hang（Wayland 協定 deadlock）。
+  3. **Qt.Window + parent=None**：無 hang 有渲染，但 `move()` 被 mutter 忽略 → 氣泡永遠出現在螢幕正中央。
+* **根因**：
+  * `mapToGlobal()` 在 Wayland 回傳 (0,0)（安全限制，無法取得全域座標）。
+  * `move()` 在 GNOME Wayland 對已 mapping 的 xdg_toplevel 無效（mutter 不允許 client 設定視窗位置）。
+  * Qt.ToolTip (xdg_popup) 在 GNOME 可能有額外的 surface commit 約束未滿足。
+* **沙盤推演與考量**：
+  * **方案 A (繼續修正 ToolTip popup)**：嘗試找出 GNOME 上 xdg_popup 不渲染的根因。時間成本不可控。
+  * **方案 B (QWindow.setPosition)**：透過 native handle 設定位置。Qt 文件已註明 `setPosition()` 在 Wayland 無效果。
+  * **方案 C (resize + move 貓視窗)**：在貓視窗上方 expand 空間畫氣泡。`move()` 在 GNOME 被忽略 → 貓視窗向下長 → 貓與氣泡一起超出螢幕底部。
+  * **方案 D (in-window 右上角，不 resize)**：氣泡畫在貓視窗內部右上角，完全不動視窗幾何。**可靠、簡單、無 side effect。**
+* **最終解法（方案 D）**：
+  1. `voice_bridge.py._init_bubble()` 偵測 GNOME Wayland（`XDG_CURRENT_DESKTOP=GNOME` + `WAYLAND_DISPLAY`），使用既有的 in-window `SpeechBubble` 類別。
+  2. SpeechBubble 在 GNOME 模式下透過 `apply_paint()` 以 `pos=(window_width - bw - 8, 4)` 定位於視窗右上角。
+  3. 非 GNOME 路徑完全不受影響，維持原有 `BubblePopup`（Qt.ToolTip / xdg_popup）。
+  4. 氣泡過期時 `is_active` 自動變 False → `apply_paint` 不再繪製 → 自然消失（無需 restore）。
+* **技術卡點**：
+  * **SpeechBubble 的 paint() 原本只能以 cat sprite 座標定位**：需要支援手動座標。新增 `pos=(bx, by)` keyword-only 參數，非 None 時繞過 `cat_x/cat_y` 計算，直接使用指定座標。
+  * **無法計算氣泡高度以決定位置**：新增 `bubble_size(text)` 公開方法，回傳 `(bw, bh)` 供外部計算定位。
+  * **GNOME 路徑不需要 hide_bubble**：`BubblePopup` 有 `hide_bubble()` 用於強制隱藏，但 `SpeechBubble` 是純繪製類別，無視窗可隱藏。`is_active` property 已涵蓋 timeout 邏輯。
+* **架構影響**：
+  * `voice_bridge.py`：`_init_bubble()` 新增 GNOME 分流；`apply_paint()` 新增 GNOME 繪製路徑；`_on_chat_done()` 新增 GNOME 分支。
+  * `speech_bubble.py`：`paint()` 新增 `pos` 參數；新增 `bubble_size()` 方法。
+  * `bubble_popup.py`：不再被 GNOME 使用，保留作為非 GNOME 平台（Sway/X11）的氣泡方案。
