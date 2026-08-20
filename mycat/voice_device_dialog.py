@@ -5,6 +5,33 @@ from PySide6 import QtWidgets
 logger = logging.getLogger(__name__)
 
 
+class VoiceDeviceRow(QtWidgets.QWidget):
+    def __init__(self, main_window=None, parent=None):
+        super().__init__(parent)
+        self._main_window = main_window
+        self._current_device_index = None
+        if main_window and hasattr(main_window, 'voice_bridge'):
+            vb = main_window.voice_bridge
+            if vb and vb._worker and vb._worker.audio_stream:
+                self._current_device_index = vb._worker.audio_stream.device_index
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QtWidgets.QLabel("Voice Input Device:"))
+        btn = QtWidgets.QPushButton("Select Device...")
+        btn.clicked.connect(self._open_dialog)
+        layout.addWidget(btn)
+
+    def _open_dialog(self):
+        selected = VoiceDeviceDialog.get_device(self, self._current_device_index)
+        if selected is not None:
+            self._current_device_index = selected
+            vb = getattr(self._main_window, 'voice_bridge', None)
+            if vb and vb._worker:
+                vb._worker.update_device(selected)
+                logger.info("Voice device updated to %d", selected)
+
+
 class VoiceDeviceDialog(QtWidgets.QDialog):
     """Dialog for selecting audio input device."""
 

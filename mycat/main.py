@@ -650,8 +650,6 @@ class PixelCatWindow(QtWidgets.QWidget):
         self.voice_bridge = VoiceBridge(
             self, mock_voice=mock_voice, test_wav=test_wav,
         )
-        self.voice_bridge.set_sleep_callback(self._trigger_sleep_animation)
-        self.voice_bridge.set_reminder_callback(self.open_reminder)
 
         # Wayland native drag handler (plugin hook)
         try:
@@ -659,27 +657,6 @@ class PixelCatWindow(QtWidgets.QWidget):
             self.wayland_drag_handler = attach_wayland_drag_handler(self)
         except Exception as e:
             logger.warning("Wayland drag handler initialization failed: %s", e)
-
-    def _on_voice_intent_detected(self, intent: dict) -> None:
-        """Delegate all voice intents to VoiceBridge."""
-        self.voice_bridge.handle_intent(intent.get("type"), intent.get("data", {}))
-
-    def _trigger_sleep_animation(self) -> None:
-        """Callback for SLEEP intent — triggers CharPack sleep or closes window."""
-        if self.char_pack is not None and (
-            self.char_pack.sleep is not None or self.char_pack.sleep_in is not None
-        ):
-            now = self.pack_now()
-            if self.char_pack.sleep_in is not None:
-                self.start_clip(self.char_pack.sleep_in, "sleeping", now)
-            else:
-                self.base_state = "sleeping"
-                self.current_pixmap = self.char_pack.sleep or self.char_pack.static
-            self.update()
-            logger.info("[voice-intent] SLEEP → sleep animation triggered")
-        else:
-            logger.info("[voice-intent] SLEEP → no CharPack sleep support, closing")
-            self.close()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self.voice_bridge.shutdown()
@@ -1839,9 +1816,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         speech bubble is NOT active (paintEvent uses _set_composite_mask during bubble).
         """
         pixmap = self.current_pixmap
-        bubble_active = bool(
-            self.voice_bridge._bubble and self.voice_bridge._bubble.is_active
-        )
+        bubble_active = self.voice_bridge.is_bubble_active
         key = (pixmap.cacheKey(), x, y, self.width(), self.height(), bubble_active)
         if key == self.shape_mask_key:
             return
@@ -2358,7 +2333,12 @@ def setup_tray(app, window):
     tray is available.
     """
     if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
-        logger.warning("System tray not available — the cat can't be sent to a tray")
+        return None
+    # On Wayland (Sway, Hyprland, …), the tray icon appears but right-click
+    # to open its menu is typically not supported — the cat would be stuck
+    # invisible with no way to quit.  Skip the tray so the cat menu shows Quit.
+    if os.environ.get("WAYLAND_DISPLAY"):
+        logger.info("Wayland: skipping system tray (right-click not supported)")
         return None
     # The full-colour app icon, same as the window and taskbar.
     tray = QtWidgets.QSystemTrayIcon(make_app_icon(), app)

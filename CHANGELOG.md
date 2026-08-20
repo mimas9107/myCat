@@ -1,3 +1,13 @@
+---
+name: "CHANGELOG.md"
+description: "專案變更日誌"
+created_date: "2026/05/01"
+modified_date: "2026/07/26"
+project_version: "0.2.0"
+document_version: "1.0.0"
+agent_sign: ['human/mimas', 'opencode/current']
+---
+
 # Changelog
 
 All notable changes to this project are documented in this file.
@@ -27,6 +37,16 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 - **The Linux launcher icon actually updates when the app updates.** `install_desktop_entry()` copied the icon to a single stable path (`~/.local/share/mycat/icon.png`) and overwrote it in place. Desktop icon caches (GNOME/KDE) key on the path and kept serving the old bitmap, so after a `pip install -U mycat` the applications-menu / taskbar icon stayed on the previous cat. The copy is now named after the icon's content hash (`icon-<hash>.png`) and referenced from `Icon=`, so a changed icon lands at a fresh path the cache can't stale; older copies (and the legacy `icon.png`) are cleaned up. The running app's in-memory window icon still needs a restart, as before (branch `fix/desktop-icon-cache-bust`).
+
+## [0.2.0] - 2026-07-26
+
+### Refactored
+- **VoiceDeviceRow 封裝 (TASK-1c)**: 將 `settings_ui.py` 中 voice device 相關 UI 與邏輯抽出為獨立 `VoiceDeviceRow` widget，入侵從 ~20 行降至 2 行。
+- **VoiceBridge auto-wire callbacks**: 將 `_trigger_sleep_animation` 從 `main.py` 搬入 `VoiceBridge._window_sleep_animation`，並透過 `_auto_wire_callbacks` 自動接線 `sleep` 與 `reminder` callback，無需 `main.py` 手動註冊。`main.py` voice intrusion 從 ~35 行降至 ~5 行。
+- **Dead code 清理**: 刪除 `main.py` 中未被呼叫的 `_on_voice_intent_detected` 方法。
+- **封裝 private access**: `refresh_shape_mask` 改透過 `VoiceBridge.is_bubble_active` property 存取，不再直接存取 `_bubble`。
+- **Wayland tray 偵測**: `setup_tray` 在 Wayland 環境（Sway）自動跳過 system tray（右鍵選單不可用），讓右鍵選單正確顯示 Quit。
+- **文件版本同步**: 所有文件新增 YAML 標頭，版本統一為 `0.2.0`。
 
 ## [0.1.26+voice.1] - 2026-07-26
 
