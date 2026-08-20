@@ -229,8 +229,8 @@ Thank you for reading to the end! 😸🐾
 name: 'README.md'
 description: 'myCat Desktop Pet — QT Overlay'
 created_date: '2026/05/01'
-modified_date: '2026/07/27'
-project_version: '0.2.3'
+modified_date: '2026/08/20'
+project_version: '0.2.4'
 document_version: '1.0.0'
 agent_sign: ['human/mimas', 'opencode/current']
 ---

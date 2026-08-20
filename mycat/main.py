@@ -654,6 +654,28 @@ class PixelCatWindow(QtWidgets.QWidget):
         except Exception as e:
             logger.warning("Wayland drag handler initialization failed: %s", e)
 
+        # Wayland: let announcer and reminder use VoiceBridge's in-window bubble
+        if getattr(self, "announcer", None) is not None:
+            from mycat.bubble_popup import _detect_compositor
+            if _detect_compositor()["_is_wayland"]:
+                self.announcer._bubble_factory = lambda item: (
+                    self.voice_bridge.show_announcement_bubble(
+                        text=item.text,
+                        duration=10.0,
+                        on_gone=self.announcer.flyby_gone,
+                    )
+                )
+        if getattr(self, "reminder_controller", None) is not None:
+            from mycat.bubble_popup import _detect_compositor
+            if _detect_compositor()["_is_wayland"]:
+                self.reminder_controller._bubble_factory = lambda item: (
+                    self.voice_bridge.show_announcement_bubble(
+                        text=item.text,
+                        duration=10.0,
+                        on_gone=lambda: None,
+                    )
+                )
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self.voice_bridge.shutdown()
         super().closeEvent(event)

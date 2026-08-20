@@ -286,8 +286,8 @@ All notable changes to this project are documented in this file.
 name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
-modified_date: "2026/07/27"
-project_version: "0.2.3"
+modified_date: "2026/08/20"
+project_version: "0.2.4"
 document_version: "1.0.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
@@ -301,8 +301,22 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **VoiceBridge 整合層** — 語音辨識、動畫、氣泡顯示封裝為單一入口
 - **Voice Animation Overlay** — Wake word / Transcribing / Intent 對應即時動畫
 - **BubblePopup 浮動氣泡** — 獨立 xdg_popup 視窗，不受 WM 限制
-- **GNOME Wayland 支援** — in-window SpeechBubble QPainter 繪製
+- **Wayland 跨平台氣泡** — in-window SpeechBubble QPainter 繪製（所有 Wayland compositor）
 - **Wayland 原生視窗拖曳** — startSystemMove 支援
+
+---
+
+## [0.2.4] - 2026-08-20
+
+### Fixed
+- **Wayland 公告氣泡統一修復 (TASK-2a)**：修復 Reminder 公告氣泡在所有 Wayland compositor（GNOME / Sway / Hyprland / KDE）上的定位問題。
+  - `BubbleWindow` 使用 `mapToGlobal()` 在 Wayland 下回傳 (0,0)，氣泡固定出現在螢幕中央。
+  - 新增 Factory Pattern：`announcer.py` + `reminder.py` 新增 `_bubble_factory` 屬性，由 `main.py` 在 Wayland 下注入 `VoiceBridge.show_announcement_bubble()`。
+  - `voice_bridge.py`：`_is_gnome_bubble` 重命名為 `_is_wayland_bubble`，判斷改為 `_is_wayland`（與 `wayland_drag.py` 策略一致）。
+  - 新增 `AnnouncementBubbleHandle`（QObject）提供 `destroyed` signal 給 Announcer 追蹤生命週期。
+
+### Changed
+- `voice_bridge.py`：`_gnome_*` 屬性/方法統一重命名為 `_wayland_*`。
 
 ---
 
