@@ -539,6 +539,7 @@ class PixelCatWindow(QtWidgets.QWidget):
         gif_data: bytes = b"",
         pack: "char_pack.CharPack | None" = None,
         mock_voice: bool = False,
+        test_wav: str | None = None,
     ) -> None:
         platform_name = ""
         app_instance = QtWidgets.QApplication.instance()
@@ -647,10 +648,16 @@ class PixelCatWindow(QtWidgets.QWidget):
 
         # Voice Assistant Worker initialization
         self.voice_worker = None
+        self._llm_backend = None
+        try:
+            from mycat.speech_bubble import SpeechBubble
+            self._speech_bubble = SpeechBubble()
+        except Exception:
+            self._speech_bubble = None
         try:
             if mock_voice:
                 from mycat.mock_voice import MockVoiceWorker
-                self.voice_worker = MockVoiceWorker()
+                self.voice_worker = MockVoiceWorker(test_wav=test_wav)
             else:
                 from mycat.voice_assistant.voice_worker import VoiceWorker
                 self.voice_worker = VoiceWorker()
@@ -678,8 +685,11 @@ class PixelCatWindow(QtWidgets.QWidget):
         data = intent.get("data", {})
 
         if intent_type == "CHAT":
-            if hasattr(self, "_toggle_llm_chat"):
-                self._toggle_llm_chat()
+            user_text = data.get("text", "")
+            if user_text and getattr(self, "_llm_backend", None):
+                self._voice_chat(user_text)
+            else:
+                logger.info("[voice-intent] CHAT → no backend or empty text, skipping")
         elif intent_type == "SET_REMINDER":
             if hasattr(self, "_open_reminder_dialog"):
                 self._open_reminder_dialog()
@@ -700,6 +710,52 @@ class PixelCatWindow(QtWidgets.QWidget):
             else:
                 logger.info("[voice-intent] SLEEP → no CharPack sleep support, closing")
                 self.close()
+
+    def _voice_chat(self, user_text: str) -> None:
+        """Send voice text to Ollama in a background thread, show response in bubble."""
+        backend = self._llm_backend
+        bubble = getattr(self, "_speech_bubble", None)
+        if not backend or not bubble:
+            return
+        self.voice_anim.set_overlay("think", 300.0)
+        self.update()
+
+        class _Worker(QtCore.QObject):
+            done = QtCore.Signal(str)
+            error = QtCore.Signal(str)
+            def run(self):
+                try:
+                    reply = backend.reply(user_text, "You are a cute cat. Reply briefly and playfully.")
+                    self.done.emit(reply)
+                except Exception as exc:
+                    self.error.emit(str(exc))
+
+        thread = QtCore.QThread(self)
+        worker = _Worker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.done.connect(lambda text: self._show_voice_bubble(text))
+        worker.error.connect(lambda err: self._voice_chat_error(err))
+        worker.done.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        worker.deleteLater()
+        thread.start()
+        self._voice_chat_thread = thread
+
+    def _show_voice_bubble(self, text: str) -> None:
+        bubble = getattr(self, "_speech_bubble", None)
+        if not bubble:
+            return
+        self.voice_anim.clear_overlay()
+        bubble.show(text)
+        self.voice_anim.set_overlay("react", 0.5)
+        self.update()
+
+    def _voice_chat_error(self, err: str) -> None:
+        self.voice_anim.clear_overlay()
+        self.update()
+        logger.warning("[voice-chat] Ollama error: %s", err)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.voice_worker and self.voice_worker.isRunning():
@@ -883,6 +939,8 @@ class PixelCatWindow(QtWidgets.QWidget):
             self.update()
         elif getattr(self, "voice_anim", None) and self.voice_anim.has_active_overlay:
             self.update()  # [VoiceAnim] force repaint while overlay active
+        elif getattr(self, "_speech_bubble", None) and self._speech_bubble.is_active:
+            self.update()  # force repaint while bubble visible
 
     def clip_frame(self, anim, age_ms: float):
         accumulated = 0
@@ -1831,6 +1889,9 @@ class PixelCatWindow(QtWidgets.QWidget):
         painter.drawPixmap(x, y, self.current_pixmap)
         if getattr(self, "voice_anim", None):
             self.voice_anim.apply_overlay(painter, x, y)
+        bubble = getattr(self, "_speech_bubble", None)
+        if bubble:
+            bubble.paint(painter, x, y, self.current_pixmap.width(), self.current_pixmap.height())
         if mode == "open":
             self.draw_pupils(painter, x, y)
         painter.end()
@@ -1935,6 +1996,13 @@ def parse_args() -> argparse.Namespace:
         "--mock-voice",
         action="store_true",
         help="Use MockVoiceWorker instead of real VoiceWorker (for testing voice animations)",
+    )
+    parser.add_argument(
+        "--test-wav",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Feed a WAV file through ASR→Intent→Ollama (use with --mock-voice)",
     )
     llm.add_arguments(parser)
     return parser.parse_args()
@@ -2519,7 +2587,7 @@ def main() -> None:
             pack = char_pack.load_pack(zip_path)
             window = PixelCatWindow(pack.static, None, args.wait, Path(zip_path).stem,
                                     available_images, b"", pack=pack,
-                                    mock_voice=args.mock_voice)
+                                    mock_voice=args.mock_voice, test_wav=args.test_wav)
         else:
             png_pixmap, gif_movie, file_name, gif_data = load_packaged_images(args.image, default_image)
             logger.info(
@@ -2527,12 +2595,13 @@ def main() -> None:
                 f"{png_pixmap.width()}x{png_pixmap.height()} for {args.wait:.1f}s"
             )
             window = PixelCatWindow(png_pixmap, gif_movie, args.wait, file_name, available_images, gif_data,
-                                    mock_voice=args.mock_voice)
+                                    mock_voice=args.mock_voice, test_wav=args.test_wav)
     except Exception as e:
         logger.error(f"Error loading char: {e}")
         sys.exit(2)
     if llm_context:
         llm.attach(window, llm_context)
+        window._llm_backend = llm_context.backend
     
     if args.pos:
         window.move(args.pos[0], args.pos[1])

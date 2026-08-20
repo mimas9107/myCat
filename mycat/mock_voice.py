@@ -5,10 +5,13 @@ simulating the wake → transcribe → intent pipeline.
 
 Usage:
     python -m mycat --mock-voice          # auto-cycle demo
+    python -m mycat --mock-voice --test-wav /path/to/file.wav  # feed WAV through real ASR→Ollama→Bubble
     python -m mycat.mock_voice            # standalone interactive menu
 """
 
 import logging
+import struct
+import wave
 
 from PySide6.QtCore import QThread, Signal, QTimer
 
@@ -24,22 +27,77 @@ _AUTO_CYCLE = [
 ]
 
 
+def _load_wav_mono(path: str):
+    """Load a WAV file and return (numpy_array_float32, sample_rate)."""
+    import numpy as np
+    with wave.open(path, "rb") as wf:
+        sr = wf.getframerate()
+        n = wf.getnframes()
+        raw = wf.readframes(n)
+        ch = wf.getnchannels()
+        sw = wf.getsampwidth()
+    samples = list(struct.unpack(f"<{n * ch}h", raw))
+    if ch > 1:
+        samples = [samples[i] for i in range(0, len(samples), ch)]
+    audio = np.array(samples, dtype=np.float32)
+    if sr != 16000:
+        ratio = 16000 / sr
+        new_len = int(len(audio) * ratio)
+        audio = np.interp(
+            np.linspace(0, len(audio), new_len, endpoint=False),
+            np.arange(len(audio)),
+            audio,
+        ).astype(np.float32)
+        sr = 16000
+    return audio, sr
+
+
 class MockVoiceWorker(QThread):
-    """Drop-in replacement for VoiceWorker.  Emits signals on a timer."""
+    """Drop-in replacement for VoiceWorker.  Emits signals on a timer.
+
+    When test_wav is provided, feeds the WAV through the real ASR→Intent
+    pipeline instead of the auto-cycle demo.
+    """
 
     status_changed_signal = Signal(str)
     intent_detected_signal = Signal(dict)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, test_wav: str | None = None):
         super().__init__(parent)
         self._is_running = False
         self._cycle_index = 0
+        self._test_wav = test_wav
 
     def run(self):
         self._is_running = True
-        logger.info("[mock-voice] started — auto-cycle %d events", len(_AUTO_CYCLE))
-        self._schedule_next()
-        self.exec()
+        if self._test_wav:
+            logger.info("[mock-voice] test-wav mode: %s", self._test_wav)
+            self._run_test_wav()
+        else:
+            logger.info("[mock-voice] started — auto-cycle %d events", len(_AUTO_CYCLE))
+            self._schedule_next()
+            self.exec()
+
+    def _run_test_wav(self):
+        """Feed a WAV through the real ASR→Intent chain, emit signals."""
+        import time
+        from mycat.voice_assistant.core.asr_pipeline import ASRPipeline
+        from mycat.voice_assistant.core.intent_parser import parse_text_to_intent
+
+        audio, sr = _load_wav_mono(self._test_wav)
+        logger.info("[mock-voice] loaded %d samples (%.1fs)", len(audio), len(audio) / sr)
+
+        self.status_changed_signal.emit("TRANSCRIBING")
+        asr = ASRPipeline(model_size="base", device="cpu", compute_type="int8", language="en")
+        t0 = time.time()
+        text = asr.transcribe(audio)
+        dt = time.time() - t0
+        logger.info("[mock-voice] ASR (%.1fs): '%s'", dt, text)
+
+        intent = parse_text_to_intent(text)
+        logger.info("[mock-voice] intent: %s", intent)
+        self.intent_detected_signal.emit(intent)
+        self.status_changed_signal.emit("LISTENING")
 
     def _schedule_next(self):
         """Schedule the next event using QTimer.singleShot (works reliably in QThread)."""
