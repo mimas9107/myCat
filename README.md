@@ -1,3 +1,13 @@
+---
+name: "README.md"
+description: "myCat Desktop Pet — QT Overlay"
+created_date: "2026/05/01"
+modified_date: "2026/07/26"
+project_version: "0.2.0"
+document_version: "1.0.0"
+agent_sign: ['human/mimas', 'opencode/current']
+---
+
 EN | [RU](https://github.com/yumiaura/myCat/blob/main/docs/README_RU.md) | [CN](https://github.com/yumiaura/myCat/blob/main/docs/README_CN.md) | [ID](https://github.com/yumiaura/myCat/blob/main/docs/README_ID.md) | [KO](https://github.com/yumiaura/myCat/blob/main/docs/README_KO.md)
 
 ## Desktop Cat: QT Overlay 🐱

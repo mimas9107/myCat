@@ -1,3 +1,13 @@
+---
+name: "SPEC.md"
+description: "myCat Voice Assistant Enhancement — Technical Specification"
+created_date: "2026/07/10"
+modified_date: "2026/07/26"
+project_version: "0.2.0"
+document_version: "1.0.0"
+agent_sign: ['human/mimas', 'opencode/current']
+---
+
 # 專案技術規格書 (SPEC.md)
 
 本文件定義 `myCat` 語音助理增強專案的技術規格與依賴。
