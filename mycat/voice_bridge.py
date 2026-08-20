@@ -49,18 +49,19 @@ class VoiceBridge(QtCore.QObject):
         self._auto_wire_callbacks()
 
     def _init_bubble(self) -> None:
-        # GNOME Wayland: mapToGlobal returns (0,0) and move() is ignored —
+        # Wayland: mapToGlobal returns (0,0) and move() is ignored —
         # use in-window QPainter (SpeechBubble) instead of a separate popup.
+        # Works on all Wayland compositors (GNOME, Sway, Hyprland, KDE).
         from mycat.bubble_popup import _detect_compositor
         compositor = _detect_compositor()
-        self._is_gnome_bubble = compositor["_is_gnome"] and compositor["_is_wayland"]
+        self._is_wayland_bubble = compositor["_is_wayland"]
 
-        if self._is_gnome_bubble:
+        if self._is_wayland_bubble:
             from mycat.speech_bubble import SpeechBubble
             self._bubble = SpeechBubble()
-            self._gnome_extra_h = 0
-            self._gnome_restore_size = None
-            _dbg("GNOME Wayland — using in-window SpeechBubble")
+            self._wayland_extra_h = 0
+            self._wayland_restore_size = None
+            _dbg("Wayland — using in-window SpeechBubble")
         else:
             try:
                 from mycat.bubble_popup import BubblePopup
@@ -179,20 +180,20 @@ class VoiceBridge(QtCore.QObject):
 
     def apply_paint(self, painter: QtGui.QPainter,
                     x: int, y: int, cat_w: int, cat_h: int) -> None:
-        """Draw overlay + GNOME in-window speech bubble."""
+        """Draw overlay + Wayland in-window speech bubble."""
         if self._anim:
             self._anim.apply_overlay(painter, x, y)
-        if self._is_gnome_bubble and self._bubble and self._bubble.is_active:
+        if self._is_wayland_bubble and self._bubble and self._bubble.is_active:
             bw, _ = self._bubble.bubble_size(self._bubble._text)
             bx = self.window.width() - bw - 8
             by = 4
             self._bubble.paint(painter, x, y, cat_w, cat_h, pos=(bx, by))
 
     def should_repaint(self) -> bool:
-        """True when overlay or GNOME bubble is active."""
-        if self._is_gnome_bubble and self._gnome_extra_h > 0:
+        """True when overlay or Wayland bubble is active."""
+        if self._is_wayland_bubble and self._wayland_extra_h > 0:
             if not self._bubble or not self._bubble.is_active:
-                self._gnome_restore_window()
+                self._wayland_restore_window()
         if self._anim and self._anim.has_active_overlay:
             return True
         return False
@@ -202,28 +203,55 @@ class VoiceBridge(QtCore.QObject):
         """True when active overlay has a voice char sprite → skip drawing cat face."""
         return bool(self._anim and self._anim.overlay_replaces_face)
 
-    def _gnome_bubble_show(self, text: str) -> None:
+    def _wayland_bubble_show(self, text: str) -> None:
         """Resize window taller so the bubble fits above the cat without overlap."""
-        if self._gnome_extra_h > 0:
-            self._gnome_restore_window()
+        if self._wayland_extra_h > 0:
+            self._wayland_restore_window()
 
         _, bh = self._bubble.bubble_size(text)
         extra = 2 * (bh + 8)  # → cat_y = bh+8, gap=4px between bubble bottom & cat top
 
-        self._gnome_restore_size = self.window.size()
-        self._gnome_extra_h = extra
+        self._wayland_restore_size = self.window.size()
+        self._wayland_extra_h = extra
 
         self.window.resize(self.window.width(), self.window.height() + extra)
         self._bubble.show(text)
-        logger.info("[voice] 💬 gnome-bubble show: %r (extra=%d)", text[:40], extra)
+        logger.info("[voice] wayland-bubble show: %r (extra=%d)", text[:40], extra)
 
-    def _gnome_restore_window(self) -> None:
+    def _wayland_restore_window(self) -> None:
         """Restore original window geometry when bubble expires."""
-        if self._gnome_restore_size is not None:
-            self.window.resize(self._gnome_restore_size)
-        self._gnome_extra_h = 0
-        self._gnome_restore_size = None
+        if self._wayland_restore_size is not None:
+            self.window.resize(self._wayland_restore_size)
+        self._wayland_extra_h = 0
+        self._wayland_restore_size = None
         self.window.update()
+
+    def show_announcement_bubble(self, text: str, duration: float = 10.0,
+                                  on_gone=None) -> "AnnouncementBubbleHandle":
+        """Show an announcement bubble in-window (Wayland).
+
+        Used by the Announcer factory when ``_bubble_factory`` is set.
+        Returns a handle with a ``destroyed`` signal for Announcer compat.
+        """
+        if self._wayland_extra_h > 0:
+            self._wayland_restore_window()
+
+        if self._bubble is None:
+            from mycat.speech_bubble import SpeechBubble
+            self._bubble = SpeechBubble()
+
+        _, bh = self._bubble.bubble_size(text)
+        extra = 2 * (bh + 8)
+
+        self._wayland_restore_size = self.window.size()
+        self._wayland_extra_h = extra
+        self.window.resize(self.window.width(), self.window.height() + extra)
+        self._bubble.show(text, duration)
+        self.window.update()
+
+        handle = AnnouncementBubbleHandle(on_gone)
+        QtCore.QTimer.singleShot(int(duration * 1000) + 200, handle._expire)
+        return handle
 
     def get_bubble_bounds(self, *args) -> QtCore.QRect | None:
         """Bubble is a separate popup window — no mask expansion needed."""
@@ -348,8 +376,8 @@ class VoiceBridge(QtCore.QObject):
         if self._anim:
             self._anim.clear_overlay()
         if self._bubble:
-            if self._is_gnome_bubble:
-                self._gnome_bubble_show(text)
+            if self._is_wayland_bubble:
+                self._wayland_bubble_show(text)
             else:
                 pixmap = getattr(self.window, "current_pixmap", None)
                 if pixmap is not None:
@@ -367,3 +395,19 @@ class VoiceBridge(QtCore.QObject):
         logger.info("[voice] ❌ chat error: %s", err[:60])
         self.window.update()
         logger.warning("[voice-chat] Ollama error: %s", err)
+
+
+class AnnouncementBubbleHandle(QtCore.QObject):
+    """Minimal QObject that emits ``destroyed`` for Announcer compat."""
+
+    destroyed = QtCore.Signal()
+
+    def __init__(self, on_gone=None):
+        super().__init__()
+        self._on_gone = on_gone
+
+    def _expire(self):
+        if self._on_gone:
+            self._on_gone()
+        self.destroyed.emit()
+        self.deleteLater()

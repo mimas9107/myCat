@@ -72,6 +72,7 @@ class Announcer(QtCore.QObject):
         self.window = window
         self.launch = launch if launch is not None else self.launch_flyby
         self.clock = clock
+        self._bubble_factory = None  # injected by main.py on Wayland
         self.queue: list[Announcement] = []
         self.active = None  # the in-flight window; also guards "one at a time"
         self.active_since = 0.0
@@ -211,6 +212,12 @@ class Announcer(QtCore.QObject):
 
     def launch_bubble(self, item: Announcement):
         """Speak ``item`` in a comic bubble above the cat instead of flying it."""
+        if self._bubble_factory is not None:
+            try:
+                return self._bubble_factory(item)
+            except Exception:
+                logger.exception("Bubble factory failed")
+                return None
         try:
             if __package__:
                 from .speech_bubble import BubbleWindow
