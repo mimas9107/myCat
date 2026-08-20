@@ -49,13 +49,26 @@ class VoiceBridge(QtCore.QObject):
         self._auto_wire_callbacks()
 
     def _init_bubble(self) -> None:
-        try:
-            from mycat.bubble_popup import BubblePopup
-            self._bubble = BubblePopup(self.window)
-            _dbg("BubblePopup created")
-        except Exception as exc:
-            _dbg("BubblePopup unavailable: %s", exc)
-            self._bubble = None
+        # GNOME Wayland: mapToGlobal returns (0,0) and move() is ignored —
+        # use in-window QPainter (SpeechBubble) instead of a separate popup.
+        from mycat.bubble_popup import _detect_compositor
+        compositor = _detect_compositor()
+        self._is_gnome_bubble = compositor["_is_gnome"] and compositor["_is_wayland"]
+
+        if self._is_gnome_bubble:
+            from mycat.speech_bubble import SpeechBubble
+            self._bubble = SpeechBubble()
+            self._gnome_extra_h = 0
+            self._gnome_restore_size = None
+            _dbg("GNOME Wayland — using in-window SpeechBubble")
+        else:
+            try:
+                from mycat.bubble_popup import BubblePopup
+                self._bubble = BubblePopup(self.window)
+                _dbg("BubblePopup created")
+            except Exception as exc:
+                _dbg("BubblePopup unavailable: %s", exc)
+                self._bubble = None
 
     def _init_worker(self) -> None:
         mock_voice = os.environ.get("MYCAT_MOCK_VOICE", "0") == "1"
@@ -166,12 +179,20 @@ class VoiceBridge(QtCore.QObject):
 
     def apply_paint(self, painter: QtGui.QPainter,
                     x: int, y: int, cat_w: int, cat_h: int) -> None:
-        """Draw overlay.  Bubble is a separate popup window (self-rendering)."""
+        """Draw overlay + GNOME in-window speech bubble."""
         if self._anim:
             self._anim.apply_overlay(painter, x, y)
+        if self._is_gnome_bubble and self._bubble and self._bubble.is_active:
+            bw, _ = self._bubble.bubble_size(self._bubble._text)
+            bx = self.window.width() - bw - 8
+            by = 4
+            self._bubble.paint(painter, x, y, cat_w, cat_h, pos=(bx, by))
 
     def should_repaint(self) -> bool:
-        """True when overlay is active and needs animation frames."""
+        """True when overlay or GNOME bubble is active."""
+        if self._is_gnome_bubble and self._gnome_extra_h > 0:
+            if not self._bubble or not self._bubble.is_active:
+                self._gnome_restore_window()
         if self._anim and self._anim.has_active_overlay:
             return True
         return False
@@ -180,6 +201,29 @@ class VoiceBridge(QtCore.QObject):
     def overlay_replaces_face(self) -> bool:
         """True when active overlay has a voice char sprite → skip drawing cat face."""
         return bool(self._anim and self._anim.overlay_replaces_face)
+
+    def _gnome_bubble_show(self, text: str) -> None:
+        """Resize window taller so the bubble fits above the cat without overlap."""
+        if self._gnome_extra_h > 0:
+            self._gnome_restore_window()
+
+        _, bh = self._bubble.bubble_size(text)
+        extra = 2 * (bh + 8)  # → cat_y = bh+8, gap=4px between bubble bottom & cat top
+
+        self._gnome_restore_size = self.window.size()
+        self._gnome_extra_h = extra
+
+        self.window.resize(self.window.width(), self.window.height() + extra)
+        self._bubble.show(text)
+        logger.info("[voice] 💬 gnome-bubble show: %r (extra=%d)", text[:40], extra)
+
+    def _gnome_restore_window(self) -> None:
+        """Restore original window geometry when bubble expires."""
+        if self._gnome_restore_size is not None:
+            self.window.resize(self._gnome_restore_size)
+        self._gnome_extra_h = 0
+        self._gnome_restore_size = None
+        self.window.update()
 
     def get_bubble_bounds(self, *args) -> QtCore.QRect | None:
         """Bubble is a separate popup window — no mask expansion needed."""
@@ -304,16 +348,17 @@ class VoiceBridge(QtCore.QObject):
         if self._anim:
             self._anim.clear_overlay()
         if self._bubble:
-            pixmap = getattr(self.window, "current_pixmap", None)
-            if pixmap is not None:
-                cat_x = (self.window.width() - pixmap.width()) // 2
-                cat_y = (self.window.height() - pixmap.height()) // 2
-                self._bubble.show_bubble(
-                    text, cat_x, cat_y, pixmap.width(), pixmap.height(),
-                )
-                logger.info("[voice] 💬 bubble-popup show: %r", text[:40])
-        if self._anim:
-            self._anim.set_overlay("react", 0.5)
+            if self._is_gnome_bubble:
+                self._gnome_bubble_show(text)
+            else:
+                pixmap = getattr(self.window, "current_pixmap", None)
+                if pixmap is not None:
+                    cat_x = (self.window.width() - pixmap.width()) // 2
+                    cat_y = (self.window.height() - pixmap.height()) // 2
+                    self._bubble.show_bubble(
+                        text, cat_x, cat_y, pixmap.width(), pixmap.height(),
+                    )
+                    logger.info("[voice] 💬 bubble-popup show: %r", text[:40])
         self.window.update()
 
     def _on_chat_error(self, err: str) -> None:
