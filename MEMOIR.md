@@ -124,3 +124,25 @@
   * `audio_stream.py` 新增 `device_index` 參數，`config.yaml` 新增 `audio.device_index: 6`（PulseAudio）。
   * `voice_worker.py` 全部 `print()` 改為 `logger.info()` 統一日誌格式。
   * VAD→ASR 管線已驗證可用（Path C 繞過 Wake Word），待喚醒詞模型就緒後切回。
+
+### [架構決策] Wake Word 開關與 Voice→Ollama→Bubble 完整鏈路
+* **日期**：2026-07-22
+* **問題描述**：
+  1. Wake Word 層在 Path C 模式下完全不使用，但 `WakeWordEngine` 仍被強制實例化、載入模型。
+  2. CHAT intent 只開聊天視窗，沒有把 ASR 文字送進 Ollama。
+  3. 想要「語音→Ollama→氣泡回應」的完整鏈路，但 SpeechBubble 作為獨立 QWidget 在 Wayland/Sway 下被 tiling 管理，無法定位在貓咪旁邊。
+* **解法**：
+  1. **Wake Word 開關**：`config.yaml` 新增 `wake_word.enabled: false`，`voice_worker.py` 在 `__init__` 中判斷後才決定是否實例化 `WakeWordEngine`。`enabled=false` 時 `self.wake_word = None`，不載入模型。
+  2. **CHAT→Ollama 鏈路**：`main.py` 的 `_on_voice_intent_detected` 改為：CHAT intent → `_voice_chat(user_text)` → background QThread 呼叫 `OllamaBackend.reply()` → `_show_voice_bubble()`。
+  3. **QPainter 氣泡**：`speech_bubble.py` 從 QWidget 改為純 Python 類別，在 `paintEvent` 中用 QPainter 畫圓角矩形 + 尾巴三角形 + word-wrap 文字。沒有獨立視窗、沒有 timer thread 問題、Sway 正確 tiling。
+  4. **think overlay 持續時間**：Ollama 呼叫期間 think overlay 設為 300s，回應到達後 clear + react bounce，避免「看起來卡死」。
+  5. **MockVoiceWorker test-wav 模式**：`--test-wav FILE` 參數讓 MockVoiceWorker 載入 WAV → ASR → Intent → 走主程式真實管線（非平行測試腳本）。
+* **踩坑紀錄**：
+  * **Intent parser 子字串誤判**：`"rest" in "interesting"` 為 True，導致 "This is a very interesting video." 被誤判為 SLEEP → `self.close()` → 貓咪消失。修復：改用 `re.search(r'\b' + keyword + r'\b', text)` 做 word-boundary matching。
+  * **QObject timer 跨執行緒**：SpeechBubble QWidget 的 `_hide_timer.start()` 從 worker thread 呼叫，觸發 `QObject::startTimer: Timers cannot be started from another thread`。修復：改為 paint-based 方案，用 `time.monotonic()` 檢查過期。
+  * **Sway 視窗管理**：Wayland 下 QWidget 即使設 `FramelessWindowHint | WindowStaysOnTopHint | Tool`，Sway 仍把它當普通 window tiling。唯有畫在父視窗的 paintEvent 裡才能確保位置正確。
+* **架構影響**：
+  * `speech_bubble.py`：純 Python 類別（非 QWidget），`show(text, duration)` + `paint(painter, x, y, w, h)`。
+  * `main.py`：`_voice_chat()` 方法（background QThread + Ollama）、`_show_voice_bubble()`、`_voice_chat_error()`。`paintEvent` 加入 `bubble.paint()` 調用。`_pack_tick` 加入 bubble 活躍時強制重繪。
+  * `voice_animation.py`：新增 `set_overlay()` 與 `clear_overlay()` 公開 API。
+  * `mock_voice.py`：`test_wav` 參數，`_run_test_wav()` 走真實 ASR→Intent 管線。
