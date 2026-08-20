@@ -329,6 +329,7 @@ class SpeechBubble:
         if not self.is_active:
             return
 
+        # Word-wrap text
         max_text_w = self._MAX_WIDTH - self._PADDING_H * 2
         lines = self._wrap_text(self._text, max_text_w)
         line_h = self._fm.height()

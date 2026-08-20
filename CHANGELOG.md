@@ -3,7 +3,7 @@ name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
 modified_date: "2026/07/27"
-project_version: "0.2.1"
+project_version: "0.2.3"
 document_version: "1.0.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
@@ -37,6 +37,24 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 - **The Linux launcher icon actually updates when the app updates.** `install_desktop_entry()` copied the icon to a single stable path (`~/.local/share/mycat/icon.png`) and overwrote it in place. Desktop icon caches (GNOME/KDE) key on the path and kept serving the old bitmap, so after a `pip install -U mycat` the applications-menu / taskbar icon stayed on the previous cat. The copy is now named after the icon's content hash (`icon-<hash>.png`) and referenced from `Icon=`, so a changed icon lands at a fresh path the cache can't stale; older copies (and the legacy `icon.png`) are cleaned up. The running app's in-memory window icon still needs a restart, as before (branch `fix/desktop-icon-cache-bust`).
+
+## [0.2.3] - 2026-07-27
+
+### Fixed
+- **GNOME Wayland 氣泡垂直間距**：調整視窗高度預留空間，確保氣泡不重疊小貓。
+- **移除 react overlay 彈跳**：`voice_bridge.py` 移除 `set_overlay("react", 0.5)`，避免小貓每次回應縮放抖動。
+
+## [0.2.2] - 2026-07-27
+
+### Fixed
+- **GNOME Wayland 語音氣泡支援 (TASK-1d)**：修復 `BubblePopup` 在 GNOME Wayland (mutter) 下無法顯示的問題。
+  - Qt.ToolTip (xdg_popup) 在 GNOME 不渲染；Qt.Window + parent 會 hang；Qt.Window + parent=None 的 `move()` 被 mutter 忽略。
+  - 最終方案：`voice_bridge.py` 偵測 GNOME Wayland 時使用 in-window `SpeechBubble` 以 QPainter 將氣泡繪製在貓咪視窗右上角，完全避開視窗定位問題。
+  - Sway/X11 路徑完全不受影響。
+
+### Added
+- `speech_bubble.py`: `paint()` 新增 `pos` 參數支援手動定位；新增 `bubble_size()` 方法。
+- `voice_bridge.py`: GNOME Wayland 偵測、in-window SpeechBubble 繪製路徑。
 
 ## [0.2.1] - 2026-07-27
 
