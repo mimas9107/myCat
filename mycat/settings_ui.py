@@ -75,19 +75,8 @@ class SettingsDialog(QtWidgets.QDialog):
             self.on_reminder_visibility(reminder_box.isChecked())
         layout.addWidget(menu_group)
 
-        voice_layout = QtWidgets.QHBoxLayout()
-        voice_label = QtWidgets.QLabel("Voice Input Device:")
-        self.voice_device_btn = QtWidgets.QPushButton("Select Device...")
-        self.voice_device_btn.clicked.connect(self._open_voice_device_dialog)
-        voice_layout.addWidget(voice_label)
-        voice_layout.addWidget(self.voice_device_btn)
-        layout.addLayout(voice_layout)
-
-        self._current_device_index = None
-        if self.main_window and hasattr(self.main_window, 'voice_bridge'):
-            vb = self.main_window.voice_bridge
-            if vb and vb._worker and vb._worker.audio_stream:
-                self._current_device_index = vb._worker.audio_stream.device_index
+        from mycat.voice_device_dialog import VoiceDeviceRow
+        layout.addWidget(VoiceDeviceRow(main_window=self.main_window))
 
         # Buttons
         button_box = QtWidgets.QDialogButtonBox(
@@ -97,17 +86,6 @@ class SettingsDialog(QtWidgets.QDialog):
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
-
-    def _open_voice_device_dialog(self):
-        from mycat.voice_device_dialog import VoiceDeviceDialog
-        selected = VoiceDeviceDialog.get_device(self, self._current_device_index)
-        if selected is not None:
-            self._current_device_index = selected
-            if self.main_window and hasattr(self.main_window, 'voice_bridge'):
-                vb = self.main_window.voice_bridge
-                if vb and vb._worker:
-                    vb._worker.update_device(selected)
-                    logger.info("Voice device updated to %d", selected)
 
     def accept(self):
         # Save settings

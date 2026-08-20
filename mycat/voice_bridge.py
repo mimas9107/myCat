@@ -1,9 +1,8 @@
 """Single integration point for all voice features in PixelCatWindow.
 
 Consolidates SpeechBubble, VoiceWorker/MockVoiceWorker, and
-VoiceAnimationController into one bridge.  main.py keeps exactly 3
-touch-points:  __init__ (start), paintEvent (apply_paint),
-closeEvent (shutdown) plus two one-liners in pack_tick and intent dispatch.
+VoiceAnimationController into one bridge.  Callbacks (sleep, reminder)
+are auto-wired from the window in __init__.
 
 Debug logging
 -------------
@@ -41,15 +40,14 @@ class VoiceBridge(QtCore.QObject):
         self._llm_backend = None
         self._chat_thread = None
 
-        # callbacks set by main.py for intents that need window internals
+        # callbacks for intents that need window internals
         self._sleep_callback = None
         self._reminder_callback = None
 
         self._init_bubble()
         self._init_worker(mock_voice, test_wav)
         self._init_animation()
-
-    # ── init helpers ──────────────────────────────────────────
+        self._auto_wire_callbacks()
 
     def _init_bubble(self) -> None:
         try:
@@ -128,6 +126,31 @@ class VoiceBridge(QtCore.QObject):
             _dbg("VoiceCharPack load skipped: %s", exc)
             return None
 
+    # ── init helpers ──────────────────────────────────────────
+
+    def _auto_wire_callbacks(self) -> None:
+        self._sleep_callback = self._window_sleep_animation
+        reminder_fn = getattr(self.window, 'open_reminder', None)
+        if reminder_fn:
+            self._reminder_callback = reminder_fn
+
+    def _window_sleep_animation(self) -> None:
+        window = self.window
+        if window.char_pack is not None and (
+            window.char_pack.sleep is not None or window.char_pack.sleep_in is not None
+        ):
+            now = window.pack_now()
+            if window.char_pack.sleep_in is not None:
+                window.start_clip(window.char_pack.sleep_in, "sleeping", now)
+            else:
+                window.base_state = "sleeping"
+                window.current_pixmap = window.char_pack.sleep or window.char_pack.static
+            window.update()
+            logger.info("[voice-intent] SLEEP → sleep animation triggered")
+        else:
+            logger.info("[voice-intent] SLEEP → no CharPack sleep support, closing")
+            window.close()
+
     # ── public API ────────────────────────────────────────────
 
     def start(self) -> None:
@@ -165,7 +188,7 @@ class VoiceBridge(QtCore.QObject):
         """Handle voice intent side-effects.  Returns True if handled.
 
         CHAT / SET_REMINDER / SLEEP are handled here.
-        Main.py only needs to call this from _on_voice_intent_detected.
+        Called from _on_intent signal handler (internal).
         """
         _EMOJI = {"CHAT": "💬", "SET_REMINDER": "⏰", "SLEEP": "😴"}
         tag = _EMOJI.get(intent_type, "🎯")
@@ -209,6 +232,10 @@ class VoiceBridge(QtCore.QObject):
     def set_reminder_callback(self, fn) -> None:
         self._reminder_callback = fn
         _dbg("reminder callback registered: %s", fn)
+
+    @property
+    def is_bubble_active(self) -> bool:
+        return bool(self._bubble and self._bubble.is_active)
 
     @property
     def is_active(self) -> bool:
