@@ -66,6 +66,14 @@ class VoiceAnimationController(QtCore.QObject):
 
     # ── overlay control ──────────────────────────────────────
 
+    def set_overlay(self, overlay_type: str, duration: float) -> None:
+        """Public API to manually trigger an overlay (e.g. from voice_chat)."""
+        self._trigger(overlay_type, duration)
+
+    def clear_overlay(self) -> None:
+        """Public API to manually clear the overlay."""
+        self._clear()
+
     def _trigger(self, overlay_type: str, duration: float) -> None:
         now = self.window._pack_now()
         self._overlay_type = overlay_type

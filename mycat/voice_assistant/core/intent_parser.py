@@ -20,9 +20,9 @@ def parse_text_to_intent(text: str) -> dict:
             },
         }
 
-    # Rule 2: Sleep / Hide Intent
+    # Rule 2: Sleep / Hide Intent (word-boundary match to avoid "rest" in "interesting")
     sleep_keywords = ["sleep", "go to sleep", "hide", "rest", "shut down", "shutdown", "turn off"]
-    if any(keyword in text_clean for keyword in sleep_keywords):
+    if any(re.search(r'\b' + re.escape(keyword) + r'\b', text_clean) for keyword in sleep_keywords):
         return {
             "type": "SLEEP",
             "data": {"raw_text": text_clean},
