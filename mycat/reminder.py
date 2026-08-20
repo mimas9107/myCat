@@ -146,6 +146,7 @@ class ReminderController(QtCore.QObject):
         self.reminder = load_reminder()
         self.flyby = None  # keep a ref so the window isn't garbage-collected mid-flight
         self.settings_dialog = None  # non-modal dialog ref (kept alive while open)
+        self._bubble_factory = None  # injected by main.py on Wayland
 
         self.normalize_on_start()
 
@@ -223,6 +224,14 @@ class ReminderController(QtCore.QObject):
 
                 speech_bubble = importlib.import_module("mycat.speech_bubble")
             if speech_bubble.bubble_mode_enabled():
+                if self._bubble_factory is not None:
+                    try:
+                        handle = self._bubble_factory(reminder)
+                        handle.destroyed.connect(lambda _=None: setattr(self, "flyby", None))
+                        self.flyby = handle
+                        return
+                    except Exception:
+                        logger.exception("Bubble factory failed; falling back to BubbleWindow")
                 bubble = speech_bubble.BubbleWindow(self.window, reminder.text, url=getattr(reminder, "url", ""))
                 bubble.destroyed.connect(lambda _=None: setattr(self, "flyby", None))
                 self.flyby = bubble

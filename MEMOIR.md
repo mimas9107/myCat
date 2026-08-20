@@ -2,8 +2,8 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/07/27"
-project_version: "0.2.3"
+modified_date: "2026/08/20"
+project_version: "0.2.4"
 document_version: "1.0.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
@@ -312,3 +312,25 @@ agent_sign: ['human/mimas', 'opencode/current']
   * `voice_bridge.py`：`_init_bubble()` 新增 GNOME 分流；`apply_paint()` 新增 GNOME 繪製路徑；`_on_chat_done()` 新增 GNOME 分支。
   * `speech_bubble.py`：`paint()` 新增 `pos` 參數；新增 `bubble_size()` 方法。
   * `bubble_popup.py`：不再被 GNOME 使用，保留作為非 GNOME 平台（Sway/X11）的氣泡方案。
+
+### [架構決策] Wayland 公告氣泡統一修復（TASK-2a）
+* **日期**：2026/08/20
+* **問題描述**：
+  Reminder 公告氣泡 (`BubbleWindow`) 使用 `mapToGlobal()` + `move()` 定位獨立 QWidget，在所有 Wayland compositor（GNOME / Sway / Hyprland / KDE）上 `mapToGlobal()` 回傳 `(0,0)`，氣泡固定出現在螢幕中央。本分支語音氣泡已有解法（`SpeechBubble` in-window QPainter），但僅限 GNOME。`_is_gnome_bubble` 判斷排除了 Sway 等其他 Wayland 環境。
+* **沙盤推演與考量**：
+  * **方案 A：直接改 `announcer.py`**：在 `launch_bubble()` 內加入 compositor 判斷。問題：污染主線模組，增加合併衝突風險。
+  * **方案 B：Factory Pattern**：`announcer.py` 新增 `_bubble_factory` 屬性，由 `main.py` 注入。Announcer 完全不知道 Wayland 的存在。**採用。**
+  * **方案 C：改 `BubbleWindow` 本身**：在 `BubbleWindow.__init__` 內判斷 Wayland 走 in-window。問題：`destroyed` signal 機制在 paint 模式下無法運作，且 `BubbleWindow` 會變得複雜。
+* **最終解法**：
+  1. `voice_bridge.py`：`_is_gnome_bubble` 重命名為 `_is_wayland_bubble`，判斷改為 `_is_wayland`（與 `wayland_drag.py` 策略一致）。`_gnome_*` 屬性/方法統一重命名為 `_wayland_*`。
+  2. `voice_bridge.py`：新增 `show_announcement_bubble(text, duration, on_gone)` 方法，複用 `_wayland_bubble_show` 邏輯，回傳 `AnnouncementBubbleHandle`（QObject with `destroyed` signal）。
+  3. `announcer.py`：`__init__` 新增 `_bubble_factory = None`；`launch_bubble()` 頂部加 factory 檢查（+6 行，0 刪改）。
+  4. `main.py`：初始化時偵測 `_is_wayland`，注入 factory lambda 到 `announcer._bubble_factory`。
+* **技術卡點**：
+  * **Announcer 需要 `destroyed` signal**：`SpeechBubble` 非 QObject，無 signal。解法：`AnnouncementBubbleHandle`（輕量 QObject），QTimer 過期後呼叫 `on_gone` callback + `destroyed.emit()` + `deleteLater()`。
+  * **語音氣泡和公告氣泡可能同時觸發**：`show_announcement_bubble()` 檢查 `_wayland_extra_h > 0` 先還原再顯示。
+* **架構影響**：
+  * `voice_bridge.py`：全域重命名 ~12 行 + 新增方法 ~30 行 + `AnnouncementBubbleHandle` 類別。
+  * `announcer.py`：+1 屬性 +5 行 factory 檢查，零刪改。
+  * `main.py`：+7 行 factory 注入。
+  * `speech_bubble.py` / `bubble_popup.py`：不動。
