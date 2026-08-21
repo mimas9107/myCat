@@ -2,9 +2,9 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/08/20"
+modified_date: "2026/08/21"
 project_version: "0.2.4"
-document_version: "1.0.0"
+document_version: "1.1.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -332,5 +332,14 @@ agent_sign: ['human/mimas', 'opencode/current']
 * **架構影響**：
   * `voice_bridge.py`：全域重命名 ~12 行 + 新增方法 ~30 行 + `AnnouncementBubbleHandle` 類別。
   * `announcer.py`：+1 屬性 +5 行 factory 檢查，零刪改。
-  * `main.py`：+7 行 factory 注入。
-  * `speech_bubble.py` / `bubble_popup.py`：不動。
+   * `main.py`：+7 行 factory 注入。
+   * `speech_bubble.py` / `bubble_popup.py`：不動。
+
+### [已知問題] listen.png 聆聽 overlay 幾乎不可見（延後處理）
+* **日期**：2026-08-21
+* **問題描述**：
+  使用者實際觀察：VAD 觸發後的 `listen.png` 聆聽姿態 overlay 幾乎從未出現在畫面上。推測原因為 VAD 觸發 → ASR 開始轉寫的時間窗極短，`listen` 狀態在極短時間內即被 `think` 狀態覆蓋，肉眼難以察覺。
+* **影響評估**：
+  低。不影響語音助理功能正確性（聆聽 → 思考 → 回覆流程正常），僅為視覺回饋幾乎無法感知，非致命問題。
+* **處理狀態**：
+  **延後修復**。未來若要修，方向：檢查 `voice_animation.py` 的 listen trigger 持續時間與 VAD → ASR 狀態流轉時序；可考慮為 listen 狀態加最短顯示時間 (min display duration)，並確認 `listen.png` 素材有被 `VoiceCharPack` 正確載入。
