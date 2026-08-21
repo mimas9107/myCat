@@ -287,8 +287,8 @@ name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
 modified_date: "2026/08/21"
-project_version: "0.2.5"
-document_version: "1.1.0"
+project_version: "0.2.6"
+document_version: "1.2.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -305,6 +305,16 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **Wayland 原生視窗拖曳** — startSystemMove 支援
 
 ---
+
+---
+
+## [0.2.6] - 2026-08-21
+
+### Added
+- **語音氣泡測試覆蓋**：新增 `tests/test_voice_bubble.py`（5 tests），補齊 TASK-3a 盤點發現的自有資產 `SpeechBubble` 測試空白（尺寸換行/生命週期/到期/paint 冒煙/行寬約束）。
+
+### Documented
+- MEMOIR 新增「氣泡模組邊界分析」：三層邊界地圖、依賴反轉接縫、殘餘 additive-only 接觸面盤點、airplane 模式與 Wayland 修正互動查證（閘門順序無斷點）、hook 注入為跨邊界整合最優形態之結論。
 
 ## [0.2.5] - 2026-08-21
 
