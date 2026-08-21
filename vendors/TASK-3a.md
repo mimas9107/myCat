@@ -23,7 +23,7 @@
 
 #### Phase 3: speech_bubble.py 還原
 - [x] `git restore --source=origin/main -- mycat/speech_bubble.py`
-- [ ] 驗證 `git diff origin/main...HEAD -- mycat/speech_bubble.py` 輸出為空（**待 commit 後驗證**）
+- [x] 驗證 `git diff origin/main...HEAD -- mycat/speech_bubble.py` 輸出為空（commit `f2ddab5` 後驗證通過）
 - [x] 確認被誤刪的上游註解/docstring 已回魂（BubbleWindow 錨定策略、成長方向圖解、X11 workaround）
 
 #### Phase 4: 文件與版號
@@ -42,14 +42,14 @@
 ---
 
 ## 驗收標準
-- [ ] `git diff origin/main...HEAD -- mycat/speech_bubble.py` 為空（最高優先驗收）
-- [ ] `mycat/voice_bubble.py` 存在且 SpeechBubble 類別本體與搬移前逐字一致
-- [ ] `py_compile` 全數通過
-- [ ] `tests/test_speech_bubble.py` 全綠
-- [ ] 語音氣泡功能正常（Wayland + X11）
-- [ ] 公告氣泡功能正常
-- [ ] AGENTS.md 所有權規則已固化
-- [ ] CHANGELOG/MEMOIR/版號完成更新
+- [x] `git diff origin/main...HEAD -- mycat/speech_bubble.py` 為空（最高優先驗收，commit 後驗證通過）
+- [x] `mycat/voice_bubble.py` 存在且 SpeechBubble 類別本體與搬移前逐字一致
+- [x] `py_compile` 全數通過
+- [x] `tests/test_speech_bubble.py` 全綠（4 passed）
+- [x] 語音氣泡功能正常（✅ Sway 實測）
+- [x] 公告氣泡功能正常（✅ Sway 實測）
+- [x] AGENTS.md 所有權規則已固化
+- [x] CHANGELOG/MEMOIR/版號完成更新（0.2.5）
 
 ---
 
