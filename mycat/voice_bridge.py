@@ -57,7 +57,7 @@ class VoiceBridge(QtCore.QObject):
         self._is_wayland_bubble = compositor["_is_wayland"]
 
         if self._is_wayland_bubble:
-            from mycat.speech_bubble import SpeechBubble
+            from mycat.voice_bubble import SpeechBubble
             self._bubble = SpeechBubble()
             self._wayland_extra_h = 0
             self._wayland_restore_size = None
@@ -237,7 +237,7 @@ class VoiceBridge(QtCore.QObject):
             self._wayland_restore_window()
 
         if self._bubble is None:
-            from mycat.speech_bubble import SpeechBubble
+            from mycat.voice_bubble import SpeechBubble
             self._bubble = SpeechBubble()
 
         _, bh = self._bubble.bubble_size(text)

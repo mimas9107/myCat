@@ -230,7 +230,7 @@ name: 'README.md'
 description: 'myCat Desktop Pet — QT Overlay'
 created_date: '2026/05/01'
 modified_date: '2026/08/21'
-project_version: '0.2.4'
+project_version: '0.2.5'
 document_version: '1.0.1'
 agent_sign: ['human/mimas', 'opencode/current']
 ---

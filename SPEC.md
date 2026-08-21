@@ -2,8 +2,8 @@
 name: "SPEC.md"
 description: "myCat Voice Assistant Enhancement — Technical Specification"
 created_date: "2026/07/10"
-modified_date: "2026/08/20"
-project_version: "0.2.4"
+modified_date: "2026/08/21"
+project_version: "0.2.5"
 document_version: "1.0.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
