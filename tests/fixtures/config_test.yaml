@@ -1,0 +1,34 @@
+# Test-fixture config — identical to production config.yaml except vad.threshold.
+#
+# The production threshold (21000) is calibrated for the user's desktop mic gain.
+# These fixtures are ESP32 INMP441 training recordings (much quieter source), so
+# the VAD is re-calibrated for them — the same per-device calibration operation
+# documented in MEMOIR.  Measured separation (buffered RMS, run-loop polling):
+#   pos (heymiaomiao speech): 3477..7831
+#   neg (noise):                220..606
+#   → threshold 2000 gives 1.74x / 3.3x margin on each side.
+
+audio:
+  sample_rate: 16000
+  chunk_duration_ms: 100
+  buffer_seconds: 3
+  device_index: null
+
+vad:
+  threshold: 2000.0
+
+wake_word:
+  enabled: false
+  threshold: 0.8
+  model_path: "models/impulse_model.eim"
+
+asr:
+  model_size: "base"
+  device: "cpu"
+  compute_type: "int8"
+  language: "en"
+  drop_after_warmup_sec: 0  # production uses 5.0 (hallucination guard); fixtures are deterministic
+
+overlay:
+  enabled: true
+  idle_yawn_after: 30

@@ -1,6 +1,8 @@
 import collections
 import logging
 import platform
+import threading
+import wave
 
 import numpy as np
 import pyaudio
@@ -128,3 +130,67 @@ class AudioStreamManager:
             return devices[0]["index"]
 
         return None
+
+
+class WavAudioStreamManager(AudioStreamManager):
+    """Feeds a WAV file through the same callback path as a live mic.
+
+    Real pipeline, fake source: everything downstream (ring buffer, VAD, ASR)
+    runs unmodified — only the capture hardware is replaced.  Chunks are fed
+    at real-time pace so wall-clock logic (VAD cooldown, ASR warmup drop)
+    behaves exactly as in production.  Enabled via ``MYCAT_AUDIO_WAV`` env
+    var; used by the automated test-suite on machines without a microphone.
+    """
+
+    def __init__(self, wav_path, sample_rate=16000, chunk_duration_ms=100, buffer_seconds=3, device_index=None):
+        # device_index=-1 keeps the parent from probing PyAudio for hardware.
+        super().__init__(sample_rate=sample_rate, chunk_duration_ms=chunk_duration_ms,
+                         buffer_seconds=buffer_seconds, device_index=-1)
+        self._wav_path = wav_path
+        self.chunk_duration_ms = chunk_duration_ms
+        self._samples = self._load_wav(wav_path, sample_rate)
+        self._feed_thread = None
+        self._stop_event = threading.Event()
+        logger.info("WavAudioStream ready: %s (%.1fs)", wav_path, len(self._samples) / sample_rate)
+
+    @staticmethod
+    def _load_wav(path, target_rate) -> np.ndarray:
+        with wave.open(path) as w:
+            if w.getsampwidth() != 2:
+                raise ValueError(f"{path}: expected 16-bit PCM, got {w.getsampwidth() * 8}-bit")
+            channels = w.getnchannels()
+            rate = w.getframerate()
+            raw = w.readframes(w.getnframes())
+        samples = np.frombuffer(raw, dtype=np.int16)
+        if channels > 1:
+            samples = samples.reshape(-1, channels).mean(axis=1).astype(np.int16)
+        if rate != target_rate:
+            n = int(len(samples) * target_rate / rate)
+            samples = np.interp(np.linspace(0, len(samples) - 1, n),
+                                np.arange(len(samples)), samples.astype(np.float64)).astype(np.int16)
+        return samples
+
+    def start(self):
+        """Feeds the WAV through _audio_callback at real-time pace in a daemon thread."""
+        if self._is_running:
+            return
+        self._is_running = True
+        self._stop_event.clear()
+        chunk_bytes = self.chunk_size * 2  # 16-bit mono
+
+        def feed():
+            for i in range(0, len(self._samples), self.chunk_size):
+                if self._stop_event.is_set():
+                    return
+                self._stop_event.wait(self.chunk_duration_ms / 1000.0)
+                chunk = self._samples[i:i + self.chunk_size].tobytes()
+                self._audio_callback(chunk, self.chunk_size, None, 0)
+            logger.info("WavAudioStream: file finished")
+
+        self._feed_thread = threading.Thread(target=feed, daemon=True, name="wav-feed")
+        self._feed_thread.start()
+
+    def stop(self):
+        """Stops the feed thread; no PyAudio resources to release."""
+        self._is_running = False
+        self._stop_event.set()

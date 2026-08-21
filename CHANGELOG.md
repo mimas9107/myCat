@@ -287,7 +287,7 @@ name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
 modified_date: "2026/08/21"
-project_version: "0.2.6"
+project_version: "0.2.7"
 document_version: "1.2.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
@@ -305,6 +305,16 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **Wayland 原生視窗拖曳** — startSystemMove 支援
 
 ---
+
+## [0.2.7] - 2026-08-21
+
+### Added
+- **語音管線 WAV 注入式全真自動測試（TASK-3b）**：`WavAudioStreamManager`（`core/audio_stream.py` 子類，即時節奏餵食）+ `MYCAT_AUDIO_WAV` env 開關 + `tests/test_voice_pipeline_e2e.py`（11 tests：intent parser 四路、SLEEP→動畫狀態機整合、正樣本→CHAT intent / 負樣本靜默之全真 E2E）。暖啟動/VAD/ASR 全為真實元件，僅音源為替身。
+- **測試 fixtures**：`tests/fixtures/audio/` 六檔 ESP32 INMP441 訓練語料純拷貝（pos×4/neg×2）+ `tests/fixtures/config_test.yaml`（生產同構，僅校準 `vad.threshold: 2000`）。
+- **conftest 根修**：預設注入 `MYCAT_AUDIO_WAV`，無麥克風環境全套件不再 PyAudio Fatal Abort。
+
+### Fixed
+- 全套件穩定性：安裝 `pytest-forked` 解決跨測試 Qt offscreen 狀態污染造成的 Segfault（pyproject 既有註解之落實），全套件首次可完整跑完。
 
 ---
 
