@@ -3,8 +3,8 @@ name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
 modified_date: "2026/08/21"
-project_version: "0.2.6"
-document_version: "1.3.0"
+project_version: "0.2.7"
+document_version: "1.4.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -379,3 +379,18 @@ agent_sign: ['human/mimas', 'opencode/current']
   上游 `bubble_mode_enabled()` 只管 announcer/reminder 的 BubbleWindow；語音氣泡有獨立生命週期不受它管。目前合理；若未來期望「關閉氣泡模式」連語音氣泡一起關，需明確決策而非意外行為。
 * **演進守則**：
   上游強化 `BubbleWindow` 時 announcer/reminder 免費受益，SpeechBubble/BubblePopup 各自演化（視覺分歧是所有權隔離的設計內成本，禁止跨邊界合併實作）；需要新氣泡能力只在 Layer B 加，不再進上游檔案。
+
+### [架構決策] 語音管線 WAV 注入式全真自動測試（TASK-3b）
+* **日期**：2026-08-21
+* **問題描述**：
+  語音管線（VAD/ASR/intent）過去只有手動硬體腳本可驗，無麥克風環境下全套件甚至會因建主視窗測試觸發 ASR 暖啟動開真音訊裝置而 Fatal Abort。需要一套「真系統、假音源」的自動測試：暖啟動/VAD/ASR 全真，僅麥克風以預錄 WAV 替代。
+* **解法**：
+  * **`WavAudioStreamManager`**（`core/audio_stream.py` 子類）：`_load_wav` 驗 16-bit/下混立體聲/`np.interp` 重採樣至 16kHz；daemon thread 以真實 chunk 節奏餵 `_audio_callback`——下游完全無感。`voice_worker.py` 以 `MYCAT_AUDIO_WAV` env 切換（`MYCAT_MOCK_VOICE` 優先權不變）。
+  * **conftest 根修**：`setdefault("MYCAT_AUDIO_WAV", <預設fixture>)` 一處修正所有建主視窗測試的開麥克風路徑。
+  * **fixtures = ESP32 INMP441 訓練語料純拷貝**（pos×4 / neg×2），零增益零加工；`tests/fixtures/config_test.yaml` 僅校準 `vad.threshold: 2000`（生產 21000 是桌面麥克風值）與 `drop_after_warmup_sec: 0`。
+  * `tests/test_voice_pipeline_e2e.py` 11 tests：parser 四路單元 ×3、SLEEP→動畫狀態機整合 ×6（`VoiceBridge.__new__` 白箱 + FakeWindow）、全真 E2E ×2（正樣本→CHAT intent 信號、負樣本靜默）。
+* **踩坑教訓**：
+  * **整窗 RMS 稀釋**：`get_recent_chunk(0.1)` 的 `[-num_samples:]` 切片在 ring buffer 未滿時回傳整個緩衝 → 有效 VAD 視窗是整窗 RMS，短句被稀釋。對 fixture 加增益/拼接補洞全部失敗（削波或不穩定）；**自然原聲 + 校準門檻**才是正解，門檻本就是設備校準參數（與桌面麥克風校準同一性質）。
+  * **全套件 Segfault ≠ 新 bug**：PyAudio Abort 根修後浮出 `test_window_behavior` 拖曳測試 segfault——跨測試 Qt offscreen 狀態污染，pyproject 註解早寫明需 `pytest-forked` 但未安裝。裝上後全套件穩定（281 passed / 3 failed 為既有 icalendar 缺模組）。
+  * **信號接線**：`ASR_READY` 走 `asr_status_signal` 而非 `status_changed_signal`，E2E spy 接錯線造成假失敗。
+* **升級路徑**：補錄一個 3 秒 "sleep" wav 即可讓 E2E 斷言 SLEEP 意圖直達動畫畫層，閉合最後一環；wake word 維持不測（config 已停用）。
