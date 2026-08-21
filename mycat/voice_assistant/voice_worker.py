@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 from PySide6.QtCore import QThread, Signal
@@ -41,12 +42,24 @@ class VoiceWorker(QThread):
         saved_device = device_store.load_saved_device_index()
         device_index = saved_device if saved_device is not None else audio_cfg.get("device_index")
 
-        self.audio_stream = AudioStreamManager(
-            sample_rate=audio_cfg.get("sample_rate", 16000),
-            chunk_duration_ms=audio_cfg.get("chunk_duration_ms", 100),
-            buffer_seconds=audio_cfg.get("buffer_seconds", 3),
-            device_index=device_index,
-        )
+        # MYCAT_AUDIO_WAV swaps the mic for a WAV file (real pipeline, fake source).
+        # Used by the automated tests on machines without audio hardware.
+        wav_source = os.environ.get("MYCAT_AUDIO_WAV")
+        if wav_source:
+            from .core.audio_stream import WavAudioStreamManager
+            self.audio_stream = WavAudioStreamManager(
+                wav_source,
+                sample_rate=audio_cfg.get("sample_rate", 16000),
+                chunk_duration_ms=audio_cfg.get("chunk_duration_ms", 100),
+                buffer_seconds=audio_cfg.get("buffer_seconds", 3),
+            )
+        else:
+            self.audio_stream = AudioStreamManager(
+                sample_rate=audio_cfg.get("sample_rate", 16000),
+                chunk_duration_ms=audio_cfg.get("chunk_duration_ms", 100),
+                buffer_seconds=audio_cfg.get("buffer_seconds", 3),
+                device_index=device_index,
+            )
         self.vad_threshold = vad_cfg.get("threshold", 3873.0)
         self.vad = EnergyVAD(threshold=self.vad_threshold)
 
