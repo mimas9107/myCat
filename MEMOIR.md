@@ -3,8 +3,8 @@ name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
 modified_date: "2026/08/21"
-project_version: "0.2.5"
-document_version: "1.2.0"
+project_version: "0.2.6"
+document_version: "1.3.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -355,3 +355,27 @@ agent_sign: ['human/mimas', 'opencode/current']
   4. AGENTS.md §2 固化所有權規則：上游檔案唯讀；分支功能一律 subclass / vendor 組合；嚴禁順手清理上游註解。判定基準：`git ls-tree origin/main` 查得到即上游檔案。
 * **教訓**：
   AI Agent 編輯共用/上游檔案時的「順手清理註解」是零收益、高衝突的破壞行為，必須在守則中明文禁止；所有權判定應機械化（ls-tree），不留判斷空間。
+
+### [架構決策] 氣泡模組邊界分析：上游 speech_bubble.py 與語音分支氣泡域（TASK-3a 後盤點）
+* **日期**：2026-08-21
+* **三層邊界地圖**：
+  * **Layer A（上游氣泡域，零反向依賴）**：`speech_bubble.py`（`BubbleWindow` + `bubble_mode_enabled`/`set_bubble_mode`）← `announcer.py`、`reminder.py`、`settings_ui.py`、`tests/test_speech_bubble.py`。
+  * **Layer C（接縫＝組合根）**：`mycat/main.py` 在 Wayland 下把 `voice_bridge.show_announcement_bubble` 注入 `announcer._bubble_factory` 與 `reminder_controller._bubble_factory`。
+  * **Layer B（本分支氣泡域，自有命名空間）**：`voice_bridge.py`（後端選擇器：Wayland → `voice_bubble.SpeechBubble` in-window 繪製；其他 → `bubble_popup.BubblePopup` xdg_popup；失敗 → None 優雅降級）＋ 公告氣泡統一入口 `show_announcement_bubble()`。
+* **接縫機制：依賴反轉，不是 import**：
+  TASK-3a 後 B→A 方向 import 歸零；A→B 方向從無 import——上游只認識「回傳帶 `destroyed` signal handle 的 callable」（`_bubble_factory`，預設 None 走原版行為）。合約面僅一個函式簽名寬；拔掉注入即 100% 還原上游行為。**掛勾式（hook）是合併與解問題的最優形態**——衝突面最小、語意可雙向共存，此結論經使用者認可，後續跨邊界整合一律優先採用 hook 注入而非直接編輯。
+* **殘餘上游接觸面（純新增，非零但可控）**：
+  | 檔案 | 增量 | 內容 | 風險 |
+  |------|------|------|------|
+  | `mycat/main.py` | +178 | VoiceBridge 初始化、factory 注入、repaint hook、shutdown | 低（組合根本就是 fork 必改之地） |
+  | `mycat/announcer.py` | +7 | `_bubble_factory` 屬性 + 分支判斷 | 低（hook 式樣可回饋上游 PR） |
+  | `mycat/reminder.py` | +9 | 同上 | 低 |
+  與已修復的 speech_bubble 本質不同：**零刪除**，衝突解法恆為「兩邊都留」，不存在語意破壞。
+* **airplane 模式與 Wayland 修正的互動查證**（使用者提問，已驗證無斷點）：
+  兩處呼叫點的閘門順序皆為「config 檢查 → 才進 bubble 路徑」：`announcer.py:189` `launch_flyby()` 先問 `bubble_mode_enabled()`，OFF → 紙飛機 flyby，走不到 `launch_bubble()` 內的 factory；`reminder.py:226` 同樣先問 `bubble_mode_enabled()`，ON 才試 factory（factory 例外時 fallback 回 `BubbleWindow`）。我們的注入被上游 config 閘門完整罩住——飛機模式照飛、氣泡模式走 Wayland 修正，互不干擾。
+* **測試覆蓋補全**：
+  TASK-3a 盤點發現自有資產 `SpeechBubble` 無測試（上游僅測 `BubbleWindow`）。已新增 `tests/test_voice_bubble.py`（5 tests：尺寸換行與寬度上限、show/clear 生命週期、duration 到期自動隱藏、雙模式 paint 冒煙、`_wrap_text` 行寬約束），沿用上游 conftest 的 offscreen qapp 慣例。9 passed（新 5 + 上游 4）。
+* **config 域分離備忘**：
+  上游 `bubble_mode_enabled()` 只管 announcer/reminder 的 BubbleWindow；語音氣泡有獨立生命週期不受它管。目前合理；若未來期望「關閉氣泡模式」連語音氣泡一起關，需明確決策而非意外行為。
+* **演進守則**：
+  上游強化 `BubbleWindow` 時 announcer/reminder 免費受益，SpeechBubble/BubblePopup 各自演化（視覺分歧是所有權隔離的設計內成本，禁止跨邊界合併實作）；需要新氣泡能力只在 Layer B 加，不再進上游檔案。
