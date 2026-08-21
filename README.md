@@ -229,9 +229,9 @@ Thank you for reading to the end! 😸🐾
 name: 'README.md'
 description: 'myCat Desktop Pet — QT Overlay'
 created_date: '2026/05/01'
-modified_date: '2026/08/20'
+modified_date: '2026/08/21'
 project_version: '0.2.4'
-document_version: '1.0.0'
+document_version: '1.0.1'
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -241,19 +241,38 @@ agent_sign: ['human/mimas', 'opencode/current']
 
 ---
 
-## 🔮 Upcoming Features
+## 🎙️ Voice Assistant (myCat + Voice)
 
 ![mycat2](./docs/mycat2.png) ![mycat2-2](./docs/mycat2-2.png)
 
-> **🚧 預告 / Future Feature Preview: Voice Assistant (myCat + Voice)**
-> 我們正在為 myCat 打造本機端的語音助理功能！未來您可以透過「喚醒詞」叫醒貓咪 (powered by Edge Impulse)，並用語音下達指令 (transcribed via faster-whisper)。這套全新的多執行緒架構 (QThread 整合) 將保證貓咪動畫在您說話時依然滑順不卡頓。
+> **🧪 實驗性功能：本機端語音助理**
+> 我們為 myCat 打造了本機端語音助理：用語音 VAD 偵測喚醒貓咪，並用語音下達指令
+> （透過 faster-whisper 轉寫）。多執行緒架構 (QThread 整合) 保證貓咪動畫在您說話時依然滑順不卡頓。
 >
-> 目前已實作 `cat2` 角色包的語音反應（需自備 Ollama + faster-whisper）：
+> 已實作 `cat2` 角色包的語音反應（需自備 Ollama + faster-whisper）：
 >
 > - 👂 **聆聽 (listen.png)** — VAD 觸發時覆蓋貓臉，顯示聆聽姿態
 > - 🤔 **思考 (think.png)** — ASR 轉寫中，貓咪歪頭等待
-> - 😴 **打哈欠 (yawn.png)** — 語音靜默 30 秒後自動觸發
-> - 💬 **氣泡回覆** — Ollama 回應以獨立浮動氣泡 (xdg_popup) 顯示，不受視窗管理限制
+> - 🥱 **打哈欠 (yawn.png)** — 語音靜默 30 秒後自動觸發（可設定、可關閉）
+> - 💬 **氣泡回覆** — Ollama 回應以浮動氣泡顯示：X11/Sway 為獨立 xdg_popup 視窗；GNOME 等 Wayland 環境自動改用視窗內繪製，同樣不受平鋪管理限制
 > - 😺 **表情疊圖修復** — 語音 overlay 活躍時自動隱藏靜態臉與瞳孔，不疊圖
 > - 🎤 **輸入裝置自動偵測** — 啟動時自動選擇 PulseAudio/PipeWire，支援 GUI 手動切換
 > - ⚡ **ASR 暖啟動** — 啟動時預載模型，SLEEP 時釋放記憶體
+>
+> **啟用方式**：
+>
+> ```bash
+> pip install "mycat[voice]"     # 語音依賴：pyaudio + faster-whisper
+> ollama pull llama3.1           # 對話模型（見上方 Chat 段落）
+> ```
+>
+> 選項集中在 `mycat/voice_assistant/config.yaml`：`audio.device_index`（null=自動偵測）、
+> `asr.model_size` / `asr.language`、`overlay.idle_yawn_after`（打哈欠閾值秒數，0 關閉）等。
+>
+> **實機畫面預覽：**
+>
+> ![ASR 轉寫中，貓咪歪頭等待](./docs/mycat2-think.png) ![Ollama 浮動氣泡回覆](./docs/mycat2-voice-interaction.png)
+> ![靜默 30 秒打哈欠](./docs/mycat2-yawn.png) ![靜默入睡](./docs/mycat2-sleep.png)
+> ![一般待機狀態](./docs/mycat2-general.png)
+>
+> 由左至右、由上至下：🤔 ASR 轉寫思考 → 💬 Ollama 氣泡回覆 → 🥱 靜默 30 秒打哈欠 → 😴 入睡 → 😺 一般待機。
