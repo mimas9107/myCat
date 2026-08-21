@@ -4,7 +4,7 @@ description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
 modified_date: "2026/08/21"
 project_version: "0.2.7"
-document_version: "1.4.0"
+document_version: "1.5.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -394,3 +394,25 @@ agent_sign: ['human/mimas', 'opencode/current']
   * **全套件 Segfault ≠ 新 bug**：PyAudio Abort 根修後浮出 `test_window_behavior` 拖曳測試 segfault——跨測試 Qt offscreen 狀態污染，pyproject 註解早寫明需 `pytest-forked` 但未安裝。裝上後全套件穩定（281 passed / 3 failed 為既有 icalendar 缺模組）。
   * **信號接線**：`ASR_READY` 走 `asr_status_signal` 而非 `status_changed_signal`，E2E spy 接錯線造成假失敗。
 * **升級路徑**：補錄一個 3 秒 "sleep" wav 即可讓 E2E 斷言 SLEEP 意圖直達動畫畫層，閉合最後一環；wake word 維持不測（config 已停用）。
+
+### [校準紀錄] VAD 門檻環境階梯實測（生產值 21000 定案依據）
+* **日期**：2026-08-21
+* **前情**：延續 2026-07-22 兩則校準記錄（energy² 時代 15M → RMS 重構後 20,000），補上 20,000 → 21,000 的最終定案依據與完整環境噪聲階梯。
+* **門檻演進與行為觀察**（使用者長期實測；觀察代理指標＝小貓 think 動畫誤觸發頻率）：
+  | 門檻 | 行為觀察 | 判定 |
+  |------|---------|------|
+  | 20,000 | 小貓頻繁跳 think 動畫（底噪誤觸發） | 太低 |
+  | **21,000** | think 動畫頻率恢復正常 | **定案** |
+  | 23,000 | 幾乎要大吼才有反應，甚至到不了 LLM | 太高 |
+* **環境噪聲階梯實測**（圖書館場景，RMS）：
+  | 聲源 | RMS | 對 21000 餘裕 |
+  |------|-----|--------------|
+  | 環境底噪 | 6,000–7,000 | ~32% |
+  | 電風扇風切（吹拂筆電） | 9,000–13,000 | 38–57% |
+  | 手指敲擊麥克風旁 | 16,000–19,000 | 僅 10–19% |
+* **結論與取捨**：
+  * 21000 是「高特異性、低敏感度」的刻意選擇：寧可要求筆電前大聲說話，也不接受底噪/風切誤觸發。
+  * 最脆弱邊界在敲擊層（19k vs 21k 僅 ~10% 餘裕）：重物撞桌/闔蓋可能越線，但下游有防線——VAD 只是閘門，誤觸發後 whisper 轉出垃圾、intent 歸 NONE，系統回 LISTENING。
+  * 門檻是設備×環境的校準參數，非普適常數：TASK-3b 的 ESP32 INMP441 fixtures（buffered RMS pos 3477–7831）另配 2000 測試門檻，同一哲學。
+  * 未來升級路徑（YAGNI 暫緩）：動態門檻 `threshold = k × rolling 環境RMS`，自動適應圖書館/咖啡廳。
+* **診斷應用**：soak test 劇本的拍手/敲桌動作預期落 16k–19k，照此階梯**不會觸發**——log 靜默即驗證校準，非測試失敗。

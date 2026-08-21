@@ -231,7 +231,7 @@ description: 'myCat Desktop Pet — QT Overlay'
 created_date: '2026/05/01'
 modified_date: '2026/08/21'
 project_version: '0.2.7'
-document_version: '1.0.1'
+document_version: '1.0.2'
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -267,7 +267,9 @@ agent_sign: ['human/mimas', 'opencode/current']
 > ```
 >
 > 選項集中在 `mycat/voice_assistant/config.yaml`：`audio.device_index`（null=自動偵測）、
-> `asr.model_size` / `asr.language`、`overlay.idle_yawn_after`（打哈欠閾值秒數，0 關閉）等。
+> `asr.model_size` / `asr.language`、`overlay.idle_yawn_after`（打哈欠閾值秒數，0 關閉）、
+> `vad.threshold`（麥克風×環境校準門檻，預設 21000：太低貓咪會因底噪頻繁跳思考動畫，
+> 太高則大聲說話也沒反應——以 think 動畫頻率作為調校依據）等。
 >
 > **實機畫面預覽：**
 >

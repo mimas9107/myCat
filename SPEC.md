@@ -4,7 +4,7 @@ description: "myCat Voice Assistant Enhancement — Technical Specification"
 created_date: "2026/07/10"
 modified_date: "2026/08/21"
 project_version: "0.2.7"
-document_version: "1.0.0"
+document_version: "1.1.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -25,6 +25,7 @@ agent_sign: ['human/mimas', 'opencode/current']
 * **語音活動偵測 (VAD - Voice Activity Detection)**
   * 實作：基於 `numpy` 的輕量級 RMS/能量檢測 (Energy VAD)。
   * 目的：過濾靜音與背景底噪，避免過度消耗喚醒詞模型算力。
+  * 門檻校準：`vad.threshold` 為設備×環境的校準參數，非普適常數。生產定案值 21000 (RMS)：環境底噪 6k–7k、風扇風切 9k–13k、敲擊瞬態 16k–19k；調校代理指標為 think 動畫誤觸發頻率（20k 頻繁誤觸、23k 大吼仍無反應）。詳見 MEMOIR「VAD 門檻環境階梯實測」。
 * **喚醒詞偵測 (Wake Word Detection)**
   * 套件：`edge_impulse_linux` (Edge Impulse Python SDK)
   * 模型格式：`.eim`
@@ -43,3 +44,12 @@ agent_sign: ['human/mimas', 'opencode/current']
     }
 }
 ```
+
+## 附註 A：VAD 人聲頻段 300–3400Hz 的第一性原理
+
+* **電信遺產**：ITU-T 電話語音通道（PSTN 類比線路、G.711 數位化，8kHz 取樣 Nyquist 上限 4kHz）——百年驗證的語音可懂度黃金頻段。
+* **下界 300Hz，擋「能量大但無語音資訊」**：電源哼聲（50/60Hz 及諧波）、呼吸噴麥、風切 rumble 全落此域。本專案實測風扇風切主要能量即在 <300Hz，帶通後直接消失。
+* **上界 3400Hz，可懂度承載上限**：元音身份由共振峰決定——F1（300–800Hz）、F2（800–2500Hz）、F3（2500–3500Hz）全在帶內；4kHz 以上主要是摩擦音氣聲（/s/、/f/），對活動偵測貢獻小且引入嘶嘶噪音。
+* **基頻在帶外不影響 VAD**：成年男聲基頻僅 85–180Hz，低於下界；但諧波列自 360Hz 起密集入帶＋共振峰結構，帶內能量足以表徵「有人說話」。活動偵測不需基頻本身（那是音高偵測的需求）。
+* **本專案實證**：esp-miao 2026-03-03 ESP32 實測，300–3400Hz 帶內能量判別比 ≈13 倍（同期全頻 RMS 僅 ≈4 倍）。
+* **非教條**：邊界做成 `vad.voice.freq_min/freq_max` config 可調，遇高頻摩擦音豐富場景可上調至 4000。
