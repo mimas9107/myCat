@@ -3,8 +3,8 @@ name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
 modified_date: "2026/08/21"
-project_version: "0.2.4"
-document_version: "1.1.0"
+project_version: "0.2.5"
+document_version: "1.2.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -343,3 +343,15 @@ agent_sign: ['human/mimas', 'opencode/current']
   低。不影響語音助理功能正確性（聆聽 → 思考 → 回覆流程正常），僅為視覺回饋幾乎無法感知，非致命問題。
 * **處理狀態**：
   **延後修復**。未來若要修，方向：檢查 `voice_animation.py` 的 listen trigger 持續時間與 VAD → ASR 狀態流轉時序；可考慮為 listen 狀態加最短顯示時間 (min display duration)，並確認 `listen.png` 素材有被 `VoiceCharPack` 正確載入。
+
+### [架構決策] 上游檔案所有權還原：SpeechBubble 搬遷 (TASK-3a)
+* **日期**：2026-08-21
+* **問題描述**：
+  文件審閱發現本分支曾直接編輯上游檔案 `mycat/speech_bubble.py`（TASK-1b `ce975b6` 注入 `SpeechBubble`、TASK-1d `5207e47` 擴充），且 AI Agent 編輯時誤刪上游 ~43 行註解/docstring（`BubbleWindow` 錨定策略、成長方向圖解、X11 workaround 說明）。該檔案是主線 reminder/announcer 的活躍開發檔案，此入侵使未來 rebase 衝突面最大化，且曾導致另一台電腦上的開發 Agent 無法判斷「該改上游檔案還是自有實作」而卡關。
+* **最終解法**：
+  1. `SpeechBubble` 類別原封搬遷至自有新檔 `mycat/voice_bubble.py`（程式化 diff 驗證類別本體 IDENTICAL）。
+  2. `voice_bridge.py` 兩處 import 改指向 `mycat.voice_bubble`。
+  3. `speech_bubble.py` 以 `git restore --source=origin/main` 還原為上游原版，衝突面歸零。
+  4. AGENTS.md §2 固化所有權規則：上游檔案唯讀；分支功能一律 subclass / vendor 組合；嚴禁順手清理上游註解。判定基準：`git ls-tree origin/main` 查得到即上游檔案。
+* **教訓**：
+  AI Agent 編輯共用/上游檔案時的「順手清理註解」是零收益、高衝突的破壞行為，必須在守則中明文禁止；所有權判定應機械化（ls-tree），不留判斷空間。

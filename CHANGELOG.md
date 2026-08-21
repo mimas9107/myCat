@@ -286,9 +286,9 @@ All notable changes to this project are documented in this file.
 name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
-modified_date: "2026/08/20"
-project_version: "0.2.4"
-document_version: "1.0.0"
+modified_date: "2026/08/21"
+project_version: "0.2.5"
+document_version: "1.1.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -305,6 +305,14 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **Wayland 原生視窗拖曳** — startSystemMove 支援
 
 ---
+
+## [0.2.5] - 2026-08-21
+
+### Refactored
+- **speech_bubble.py 所有權還原 (TASK-3a)**：將本分支的 `SpeechBubble` 類別自上游檔案 `mycat/speech_bubble.py` 搬遷至自有新檔 `mycat/voice_bubble.py`，並將 `speech_bubble.py` 還原為 origin/main 原版（含被誤刪的上游註解/docstring）。
+  - `voice_bridge.py` 兩處 import 改指向 `mycat.voice_bubble`，語音氣泡行為不變。
+  - 該上游檔案的 rebase 衝突面歸零。
+  - AGENTS.md §2 固化「上游檔案唯讀」所有權守則（判定基準：`git ls-tree origin/main`）。
 
 ## [0.2.4] - 2026-08-20
 
