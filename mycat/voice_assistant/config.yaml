@@ -2,23 +2,35 @@ audio:
   sample_rate: 16000
   chunk_duration_ms: 100
   buffer_seconds: 3
-  device_index: null  # null = auto-detect, integer = use specific device
+  device_index: null # null = auto-detect, integer = use specific device
 
 vad:
-  threshold: 21000.0
+  threshold: 6000.0
+  # Layer 1 voice filter (PLAN-3c). Remove the whole voice: section to get
+  # exact legacy EnergyVAD-only behavior.
+  voice:
+    enabled: true
+    freq_min: 300
+    freq_max: 3400
+    snr_on: 2.25
+    snr_off: 1.5
+    min_speech_ms: 200
+    release_ms: 300
+    floor_alpha: 0.01
+    smooth_alpha: 0.3
 
 wake_word:
   enabled: false
   threshold: 0.8
-  model_path: "models/impulse_model.eim"
+  model_path: 'models/impulse_model.eim'
 
 asr:
-  model_size: "base"
-  device: "cpu"
-  compute_type: "int8"
-  language: "en"
-  drop_after_warmup_sec: 5.0  # skip ASR results within this window after warm-load
+  model_size: 'base'
+  device: 'cpu'
+  compute_type: 'int8'
+  language: 'en'
+  drop_after_warmup_sec: 5.0 # skip ASR results within this window after warm-load
 
 overlay:
   enabled: true
-  idle_yawn_after: 30  # seconds of silence before idle yawn (0 to disable)
+  idle_yawn_after: 30 # seconds of silence before idle yawn (0 to disable)

@@ -2,9 +2,9 @@
 name: "SPEC.md"
 description: "myCat Voice Assistant Enhancement — Technical Specification"
 created_date: "2026/07/10"
-modified_date: "2026/08/21"
-project_version: "0.2.7"
-document_version: "1.1.0"
+modified_date: "2026/08/22"
+project_version: "0.3.0"
+document_version: "1.2.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -22,10 +22,11 @@ agent_sign: ['human/mimas', 'opencode/current']
   * 套件：`PyAudio`
   * 規格：單聲道 (Mono), 16kHz 取樣率, 16-bit PCM。
   * 緩衝區：利用 `collections.deque` 實作 Ring Buffer，保留過去 2-3 秒的歷史音訊供喚醒後使用。
-* **語音活動偵測 (VAD - Voice Activity Detection)**
-  * 實作：基於 `numpy` 的輕量級 RMS/能量檢測 (Energy VAD)。
-  * 目的：過濾靜音與背景底噪，避免過度消耗喚醒詞模型算力。
-  * 門檻校準：`vad.threshold` 為設備×環境的校準參數，非普適常數。生產定案值 21000 (RMS)：環境底噪 6k–7k、風扇風切 9k–13k、敲擊瞬態 16k–19k；調校代理指標為 think 動畫誤觸發頻率（20k 頻繁誤觸、23k 大吼仍無反應）。詳見 MEMOIR「VAD 門檻環境階梯實測」。
+* **語音活動偵測 (VAD - Voice Activity Detection)** — 雙層閘門架構（TASK-3c），觸發 = L0 AND L1
+  * **L0 保命層 (Energy VAD)**：基於 `numpy` 的輕量級 RMS/能量檢測，絕對門檻 `vad.threshold`。目的：過濾靜音與背景底噪，避免過度消耗喚醒詞模型算力。
+  * 門檻校準：`vad.threshold` 為設備×環境的校準參數，非普適常數。生產定案值 21000 (RMS)：環境底噪 6k–7k、風扇風切 9k–13k、敲擊瞬態 16k–19k；調校代理指標為 think 動畫誤觸發頻率（20k 頻繁誤觸、23k 大吼仍無反應）。詳見 MEMOIR「VAD 門檻環境階梯實測」。TASK-3c soak 補充：L1 啟用後絕對門檻僅剩 log/CPU 意義（實測環境音 RMS 可常態超過門檻而零誤觸發），靈敏度上限改由 L1 的 `snr_on` 決定。
+  * **L1 人聲層 (VoiceVAD，`core/vad_filter.py`)**：30ms 幀 Blackman 窗 rfft 帶通 300–3400Hz → 帶內 RMS 對 gated EMA 自適應噪底取比（僅非語音幀更新噪底，含 300ms 快速 bootstrap 校準）→ SNR 遲滯狀態機（`snr_on=2.25` / `snr_off=1.5`）→ `min_speech_ms=200` 洩漏式持續性閘門（拒斥敲擊等瞬態）。config：`vad.voice.*`（`enabled` 開關；**移除整段即逐 bit 回復純 L0 舊行為**）；worker 中 L1 例外時自動退回純 L0。
+  * 已知極限：(1) 冷啟動 bootstrap 期（~300ms）語音不可偵測——啟動瞬間即說話的首句會漏；(2) 諧波樂器能量集中帶內且可持續 >200ms，可穿透雙層（ZCR 第三特徵為後續候選解）。
 * **喚醒詞偵測 (Wake Word Detection)**
   * 套件：`edge_impulse_linux` (Edge Impulse Python SDK)
   * 模型格式：`.eim`

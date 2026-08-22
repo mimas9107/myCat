@@ -286,9 +286,9 @@ All notable changes to this project are documented in this file.
 name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
-modified_date: "2026/08/21"
-project_version: "0.2.7"
-document_version: "1.2.0"
+modified_date: "2026/08/22"
+project_version: "0.3.0"
+document_version: "1.3.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -305,6 +305,15 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **Wayland 原生視窗拖曳** — startSystemMove 支援
 
 ---
+
+## [0.3.0] - 2026-08-22
+
+### Added
+- **人聲突顯自適應 VAD（VoiceVAD，TASK-3c）——VAD 升級為雙層閘門架構**：在既有 Energy VAD（L0 保命層）之後新增 L1 人聲濾鏡，觸發 = L0 AND L1。`core/vad_filter.py` 新增 `VoiceVAD` 類別：30ms 幀 Blackman 窗 rfft 帶通 300–3400Hz、gated EMA 自適應噪底（僅非語音幀更新＋300ms 快速 bootstrap 校準）、SNR 遲滯狀態機（`snr_on=2.25`/`snr_off=1.5`）、200ms 洩漏式持續性閘門拒斥敲擊瞬態。config 新增 `vad.voice.*` 段——`enabled` 開關，**移除整段即逐 bit 回復純 L0 舊行為**；worker 端 L1 例外自動退回純 L0。真機 soak：204 次環境噪聲全被 L1 否決、正常距離喚醒充足、遠講可用。
+- **e2e 擴充至 17 tests**：既有乾淨前導 fixtures（pos_n→觸發/neg_quiet→靜默）＋使用者補錄三支 INMP441 同規格 wav 對應 PLAN 三案例（風扇不觸發／敲擊不觸發／遠講觸發）；全套件逐檔回歸零回歸。
+
+### Fixed
+- **WAV 注入測試「凍結尾端」時序病理**：`asr.load()` 阻塞於輪詢迴圈之前，短 fixture 在消費者就緒前即播完，ring buffer 凍結在檔尾靜音——舊 e2e 依賴「L0 對靜音尾端永遠通過」的退化行為。`WavAudioStreamManager` 新增 `start_delayed`/`resume()` 閘門，worker 於模型載入完成後釋放，fixture 改為消費者就緒後「邊播邊聽」，與真實麥克風語義一致。
 
 ## [0.2.7] - 2026-08-21
 

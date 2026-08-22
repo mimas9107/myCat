@@ -140,9 +140,15 @@ class WavAudioStreamManager(AudioStreamManager):
     at real-time pace so wall-clock logic (VAD cooldown, ASR warmup drop)
     behaves exactly as in production.  Enabled via ``MYCAT_AUDIO_WAV`` env
     var; used by the automated test-suite on machines without a microphone.
+
+    With ``start_delayed=True`` the feed thread parks on a gate until
+    :meth:`resume` — letting VoiceWorker finish its blocking ``asr.load()``
+    first, so a short fixture plays while the consumer loop is actually
+    polling instead of finishing unseen inside the ring buffer.
     """
 
-    def __init__(self, wav_path, sample_rate=16000, chunk_duration_ms=100, buffer_seconds=3, device_index=None):
+    def __init__(self, wav_path, sample_rate=16000, chunk_duration_ms=100, buffer_seconds=3, device_index=None,
+                 start_delayed=False):
         # device_index=-1 keeps the parent from probing PyAudio for hardware.
         super().__init__(sample_rate=sample_rate, chunk_duration_ms=chunk_duration_ms,
                          buffer_seconds=buffer_seconds, device_index=-1)
@@ -151,6 +157,7 @@ class WavAudioStreamManager(AudioStreamManager):
         self._samples = self._load_wav(wav_path, sample_rate)
         self._feed_thread = None
         self._stop_event = threading.Event()
+        self._start_gate = threading.Event() if start_delayed else None
         logger.info("WavAudioStream ready: %s (%.1fs)", wav_path, len(self._samples) / sample_rate)
 
     @staticmethod
@@ -170,6 +177,11 @@ class WavAudioStreamManager(AudioStreamManager):
                                 np.arange(len(samples)), samples.astype(np.float64)).astype(np.int16)
         return samples
 
+    def resume(self):
+        """Releases a start_delayed stream so the feed thread begins playing."""
+        if self._start_gate is not None:
+            self._start_gate.set()
+
     def start(self):
         """Feeds the WAV through _audio_callback at real-time pace in a daemon thread."""
         if self._is_running:
@@ -179,6 +191,11 @@ class WavAudioStreamManager(AudioStreamManager):
         chunk_bytes = self.chunk_size * 2  # 16-bit mono
 
         def feed():
+            if self._start_gate is not None:
+                # stop() also sets the gate so this wait can never deadlock.
+                self._start_gate.wait()
+                if self._stop_event.is_set():
+                    return
             for i in range(0, len(self._samples), self.chunk_size):
                 if self._stop_event.is_set():
                     return
@@ -194,3 +211,5 @@ class WavAudioStreamManager(AudioStreamManager):
         """Stops the feed thread; no PyAudio resources to release."""
         self._is_running = False
         self._stop_event.set()
+        if self._start_gate is not None:
+            self._start_gate.set()

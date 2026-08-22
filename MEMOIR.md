@@ -2,9 +2,9 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/08/21"
-project_version: "0.2.7"
-document_version: "1.5.0"
+modified_date: "2026/08/22"
+project_version: "0.3.0"
+document_version: "1.6.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -416,3 +416,19 @@ agent_sign: ['human/mimas', 'opencode/current']
   * 門檻是設備×環境的校準參數，非普適常數：TASK-3b 的 ESP32 INMP441 fixtures（buffered RMS pos 3477–7831）另配 2000 測試門檻，同一哲學。
   * 未來升級路徑（YAGNI 暫緩）：動態門檻 `threshold = k × rolling 環境RMS`，自動適應圖書館/咖啡廳。
 * **診斷應用**：soak test 劇本的拍手/敲桌動作預期落 16k–19k，照此階梯**不會觸發**——log 靜默即驗證校準，非測試失敗。
+
+### [架構決策] 人聲突顯自適應 VAD：雙層閘門、數據驅動偏離與移植決策 (TASK-3c)
+* **日期**：2026-08-22
+* **edge 對比分析與移植決策**（PLAN-3c §3）：
+  * esp-miao edge 端 C 實作的核心三件——帶通 300–3400Hz、gated EMA 噪底、SNR 遲滯——全數移植至 Python 原型；**窗函數 Hamming→Blackman**：Hamming -41dB 旁瓣讓 80Hz/amp5000 純音帶內洩漏達 1.7–2.5× 恰卡 snr_on（合成訊號測試抓到），Blackman -58dB 壓到 ≈0.07×；edge 端未來回饋時應同步此修正。
+  * **k_on 3.0→2.25**：ESP32 語料掃描顯示嘈雜環境正樣本持續帶內 SNR 僅 2.3–2.7×，3.0 會漏；≤2.0 則 neg_noise_mid 尾段噪聲漲潮誤觸發。2.25 為語料實證平衡點。
+  * **Python 端新增平滑＋洩漏式持續計數**（edge 端無）：分數徘徊型語音幀級 EMA（smooth_alpha=0.3）＋miss 扣 1×hop_ms，否則 pos_n 類樣本永不累計滿 min_speech_ms。
+* **冷啟動 bootstrap 為已知極限**：自適應噪底需 ~300ms 快速校準期，t=0 即語音的音源（pos_alt/pos_s）首句必漏；已驗證靜默後可復原。真機語義＝啟動瞬間說話漏聽一次，可接受。
+* **真機 soak 結論**（Wayland，VoiceVAD=on）：204 次環境噪聲 L0 通過全被 L1 否決（VETO score 中位 1.03）；正常距離喚醒充足、遠講約半數可用；**絕對門檻下修評估結論＝不需要**——實測環境音 RMS 常態超過 6000 門檻（L0 形同常開），靈敏度上限改由 snr_on 決定，「高特異性」職責正式由 L0 移交 L1。
+* **ZCR 第三特徵有實證場景**：諧波樂器能量集中 300–3400Hz 且持續 >200ms，雙層皆擋不住（whisper 轉出幻覺詞 'You' ×7）。列後續候選，暫不實作。
+* **發現既有缺口（另立 Task）**：voice_worker 觸發後無緩衝清空/鎖定期/等 release_ms 機制——滑動 2s 窗口對同一句話連續轉錄（一句 hello → 3 次 CHAT → LLM 呼叫與氣泡排隊）。`vad_cooldown` 變數名不副實，實際只節流 RMS log。與本 Task 無關，使用者已裁示另立計畫。
+* **踩坑教訓**：
+  * `is_speech()` 對 <480 樣本 chunk 直接返回當前狀態不處理——手工模擬餵 160 樣本 hop 會全程 score=0 且 `_floor` 留 None，易誤判實作壞掉；模擬須用 worker 同款 ≥100ms chunk。
+  * fixtures 判別比不可用整檔 median 表徵（pos 檔靜音填充稀釋 median 近 25 倍）；判別結構是「爆發峰值 vs 穩態噪聲」，須行為判決或 p90。
+  * WAV 注入「凍結尾端」病理：`asr.load()` 阻塞於輪詢前，短 fixture 提前播完、ring buffer 凍在檔尾靜音，舊 e2e 依賴退化行為通過；`start_delayed`/`resume()` 閘門修復（詳 CHANGELOG 0.3.0）。
+* **升級路徑**：esp-miao edge 端 C 實作同步 Blackman 修正與 k_on=2.25 校準值（遠程作業）；滑動窗口重複轉錄缺口另立 Task 處理。
