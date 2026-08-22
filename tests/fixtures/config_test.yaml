@@ -16,6 +16,18 @@ audio:
 
 vad:
   threshold: 2000.0
+  # Same Layer 1 section as production; SNR gates are relative so the ESP32
+  # fixtures need no re-calibration (unlike the absolute L0 threshold above).
+  voice:
+    enabled: true
+    freq_min: 300
+    freq_max: 3400
+    snr_on: 2.25
+    snr_off: 1.5
+    min_speech_ms: 200
+    release_ms: 300
+    floor_alpha: 0.01
+    smooth_alpha: 0.3
 
 wake_word:
   enabled: false

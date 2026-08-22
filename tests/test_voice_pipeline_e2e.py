@@ -14,6 +14,8 @@ ESP32 fixture recordings (production's 21000 targets the desktop mic gain).
 import os
 import time
 
+import pytest
+
 from mycat.voice_assistant.core.intent_parser import parse_text_to_intent
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "audio")
@@ -139,6 +141,36 @@ def _drain(qapp, seconds):
         time.sleep(0.05)
 
 
+def test_worker_voice_vad_wiring(qapp, tmp_path):
+    """PLAN-3c Phase 2: voice: section wires Layer 1; absent section = pure L0."""
+    import yaml
+
+    from mycat.voice_assistant.voice_worker import VoiceWorker
+
+    with open(TEST_CONFIG) as f:
+        cfg = yaml.safe_load(f)
+    assert "voice" in cfg["vad"], "config_test.yaml must carry the voice section"
+    del cfg["vad"]["voice"]
+    legacy_path = tmp_path / "config_no_voice.yaml"
+    legacy_path.write_text(yaml.safe_dump(cfg))
+
+    w_on = VoiceWorker(config_path=TEST_CONFIG)
+    try:
+        assert w_on.voice_vad is not None
+        assert w_on._voice_vad_active is True
+        assert w_on.voice_vad.snr_on == 2.25
+        assert w_on.vad.threshold == 2000.0  # L0 untouched by the voice section
+    finally:
+        w_on.deleteLater()
+
+    w_off = VoiceWorker(config_path=str(legacy_path))
+    try:
+        assert w_off.voice_vad is None
+        assert w_off._voice_vad_active is False  # exact legacy behavior path
+    finally:
+        w_off.deleteLater()
+
+
 def test_wav_fixture_reaches_intent_through_real_pipeline(qapp):
     from mycat.voice_assistant.voice_worker import VoiceWorker
 
@@ -188,3 +220,78 @@ def test_noise_fixture_produces_no_intent(qapp, monkeypatch):
         assert events["intents"] == [], f"noise falsely triggered: {events['intents']}"
     finally:
         worker.stop()
+
+
+# ── TASK-3c Phase 3: remaining clean-lead fixtures through the full pipeline ──
+#
+# pos_alt/pos_s are excluded here: both start mid-speech at t=0, so the
+# adaptive bootstrap eats their only utterance (documented cold-start limit,
+# covered by the recovery unit test in test_voice_vad.py).
+
+CLEAN_LEAD_POS = ["pos_heymiaomiao_n.wav"]
+CLEAN_LEAD_NEG = ["neg_noise_quiet.wav"]
+PLAYOUT_SEC = 8.0  # 3s fixture + transcription margin after ASR_READY
+
+
+def _run_real_pipeline(qapp, monkeypatch, fixture):
+    from mycat.voice_assistant.voice_worker import VoiceWorker
+
+    monkeypatch.setenv("MYCAT_AUDIO_WAV", os.path.join(FIXTURES, fixture))
+    worker = VoiceWorker(config_path=TEST_CONFIG)
+    events = {"intents": [], "asr_status": []}
+    worker.intent_detected_signal.connect(events["intents"].append)
+    worker.asr_status_signal.connect(events["asr_status"].append)
+    worker.start()
+    try:
+        ready_at = None
+        deadline = time.time() + 120
+        while time.time() < deadline and qapp is not None:
+            qapp.processEvents()
+            time.sleep(0.05)
+            if ready_at is None and "ASR_READY" in events["asr_status"]:
+                ready_at = time.time()
+            elif ready_at is not None:
+                if any(i.get("type") == "CHAT" for i in events["intents"]):
+                    break
+                if time.time() - ready_at >= PLAYOUT_SEC:
+                    break
+        assert ready_at is not None, f"{fixture}: warm-start failed: {events['asr_status']}"
+    finally:
+        worker.stop()
+    return events
+
+
+@pytest.mark.parametrize("fixture", CLEAN_LEAD_POS)
+def test_clean_lead_pos_fixture_reaches_intent(qapp, monkeypatch, fixture):
+    events = _run_real_pipeline(qapp, monkeypatch, fixture)
+    chats = [i for i in events["intents"] if i.get("type") == "CHAT"]
+    assert chats, f"{fixture} produced no intent; asr={events['asr_status']}"
+
+
+@pytest.mark.parametrize("fixture", CLEAN_LEAD_NEG)
+def test_clean_lead_neg_fixture_stays_silent(qapp, monkeypatch, fixture):
+    events = _run_real_pipeline(qapp, monkeypatch, fixture)
+    assert events["intents"] == [], f"{fixture} falsely triggered: {events['intents']}"
+
+
+# ── TASK-3c Phase 3: user-recorded validation corpus (INMP441-spec re-records) ──
+#
+# Acceptance trio from PLAN-3c §4: fan must not trigger, knock must not
+# trigger (transient rejection through the persistence gate), distant
+# speech must trigger.
+
+USER_REC_POS = ["heymiaomiao.wav"]           # distant speech → CHAT
+USER_REC_NEG = ["fan.wav", "knockknock.wav"]  # steady noise / impulse → silence
+
+
+@pytest.mark.parametrize("fixture", USER_REC_POS)
+def test_user_recording_distant_speech_reaches_intent(qapp, monkeypatch, fixture):
+    events = _run_real_pipeline(qapp, monkeypatch, fixture)
+    chats = [i for i in events["intents"] if i.get("type") == "CHAT"]
+    assert chats, f"distant speech '{fixture}' not detected; asr={events['asr_status']}"
+
+
+@pytest.mark.parametrize("fixture", USER_REC_NEG)
+def test_user_recording_nonvoice_stays_silent(qapp, monkeypatch, fixture):
+    events = _run_real_pipeline(qapp, monkeypatch, fixture)
+    assert events["intents"] == [], f"'{fixture}' falsely triggered: {events['intents']}"
