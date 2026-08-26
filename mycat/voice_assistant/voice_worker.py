@@ -240,6 +240,9 @@ class VoiceWorker(QThread):
                             self._rearm_lockout_until, self._last_trigger_time + self._rearm_max_wait_ms)
             else:
                 logger.info("[asr] returned empty text")
+                # Also clear buffer on empty result to prevent same audio window
+                # from re-triggering VAD on next poll (no re-arm needed).
+                self.audio_stream.clear_buffer()
 
             self.status_changed_signal.emit("LISTENING")
 
