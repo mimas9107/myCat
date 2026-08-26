@@ -5,7 +5,7 @@ audio:
   device_index: null # null = auto-detect, integer = use specific device
 
 vad:
-  threshold: 6000.0
+  threshold: 21000.0
   retrigger_lockout_ms: 1500  # PLAN-3d: ms after intent before re-arming
   rearm_max_wait_ms: 10000    # PLAN-3d: force re-arm cap even if L1 hasn't released
   # Layer 1 voice filter (PLAN-3c). Remove the whole voice: section to get

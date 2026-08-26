@@ -312,6 +312,10 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **觸發後重複轉錄抑制 (Retrigger Suppression, TASK-3d)**：意圖 emit 後清空 ring buffer + 進入 re-arm 狀態，lockout 1500ms AND (L1 released OR cap 10s) 後才重新武裝，防範同一句語音因滑動緩衝重複觸發 ASR。`AudioStreamManager` 新增 `clear_buffer()` + `_buffer_lock` 併發安全；`voice_worker.py` re-arm gate 期間持續餵 L1 以偵測 release。config 新增 `vad.retrigger_lockout_ms` / `vad.rearm_max_wait_ms`（省略＝預設值）；`vad_cooldown` 正名為 `rms_log_throttle`。`EnergyVAD` / `VoiceVAD` 內部零變更。
 - **e2e 擴充至 20 tests**：新增單句恰 1 次 CHAT / 雙句恰 2 次 CHAT / 純 L0 重複抑制三支 E2E 測試。全套件回歸通過（voice_vad 10 / voice_pipeline_e2e 20 / voice_bubble 5 / speech_bubble 4）。
 
+### Fixed
+- **ASR 返回空文字時未清空 buffer，導致同一段音訊重複觸發**：空文字也呼叫 `clear_buffer()`，打破「空轉錄→buffer 未清→下次 poll 同段音訊再 TRIGGER」的迴圈。
+- `vad.threshold` 生產值校準為 21000（X240 標準 RMS，原 6000 為另一台機器數據）。
+
 ## [0.3.0] - 2026-08-22
 
 ### Added
