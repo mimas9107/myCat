@@ -2,9 +2,9 @@
 name: "SPEC.md"
 description: "myCat Voice Assistant Enhancement — Technical Specification"
 created_date: "2026/07/10"
-modified_date: "2026/08/22"
-project_version: "0.3.0"
-document_version: "1.2.0"
+modified_date: "2026/08/26"
+project_version: "0.3.1"
+document_version: "1.3.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -27,6 +27,11 @@ agent_sign: ['human/mimas', 'opencode/current']
   * 門檻校準：`vad.threshold` 為設備×環境的校準參數，非普適常數。生產定案值 21000 (RMS)：環境底噪 6k–7k、風扇風切 9k–13k、敲擊瞬態 16k–19k；調校代理指標為 think 動畫誤觸發頻率（20k 頻繁誤觸、23k 大吼仍無反應）。詳見 MEMOIR「VAD 門檻環境階梯實測」。TASK-3c soak 補充：L1 啟用後絕對門檻僅剩 log/CPU 意義（實測環境音 RMS 可常態超過門檻而零誤觸發），靈敏度上限改由 L1 的 `snr_on` 決定。
   * **L1 人聲層 (VoiceVAD，`core/vad_filter.py`)**：30ms 幀 Blackman 窗 rfft 帶通 300–3400Hz → 帶內 RMS 對 gated EMA 自適應噪底取比（僅非語音幀更新噪底，含 300ms 快速 bootstrap 校準）→ SNR 遲滯狀態機（`snr_on=2.25` / `snr_off=1.5`）→ `min_speech_ms=200` 洩漏式持續性閘門（拒斥敲擊等瞬態）。config：`vad.voice.*`（`enabled` 開關；**移除整段即逐 bit 回復純 L0 舊行為**）；worker 中 L1 例外時自動退回純 L0。
   * 已知極限：(1) 冷啟動 bootstrap 期（~300ms）語音不可偵測——啟動瞬間即說話的首句會漏；(2) 諧波樂器能量集中帶內且可持續 >200ms，可穿透雙層（ZCR 第三特徵為後續候選解）。
+* **重複觸發抑制 (Retrigger Suppression, TASK-3d)** — lockout + L1 release + cap 三條件
+  * **問題**：意圖 emit 後 consumer loop 繼續輪詢滑動緩衝，VAD 在語音結束前持續通過 → 同一句產生多筆意圖。
+  * **解法**：意圖 emit 後 (1) `clear_buffer()` 清空 ring buffer；(2) 進入 re-arm 狀態（`_rearming=True`）。re-arm 閘門需同時滿足：lockout 到期（`vad.retrigger_lockout_ms`，預設 1500ms）AND（L1 released ≥ `voice.release_ms` OR 距觸發 ≥ `vad.rearm_max_wait_ms` 強制上限）。
+  * **L0 純模式相容**：移除 `voice:` 段後，L1 缺席（`l1_released` 恒 True），僅走 lockout 計時。
+  * **config**：`vad.retrigger_lockout_ms`（預設 1500）、`vad.rearm_max_wait_ms`（預設 10000）；省略＝預設值語義。
 * **喚醒詞偵測 (Wake Word Detection)**
   * 套件：`edge_impulse_linux` (Edge Impulse Python SDK)
   * 模型格式：`.eim`

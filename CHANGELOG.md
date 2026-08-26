@@ -286,9 +286,9 @@ All notable changes to this project are documented in this file.
 name: "CHANGELOG.md"
 description: "專案變更日誌"
 created_date: "2026/05/01"
-modified_date: "2026/08/22"
-project_version: "0.3.0"
-document_version: "1.3.0"
+modified_date: "2026/08/26"
+project_version: "0.3.1"
+document_version: "1.4.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -305,6 +305,12 @@ agent_sign: ['human/mimas', 'opencode/current']
 - **Wayland 原生視窗拖曳** — startSystemMove 支援
 
 ---
+
+## [0.3.1] - 2026-08-26
+
+### Added
+- **觸發後重複轉錄抑制 (Retrigger Suppression, TASK-3d)**：意圖 emit 後清空 ring buffer + 進入 re-arm 狀態，lockout 1500ms AND (L1 released OR cap 10s) 後才重新武裝，防範同一句語音因滑動緩衝重複觸發 ASR。`AudioStreamManager` 新增 `clear_buffer()` + `_buffer_lock` 併發安全；`voice_worker.py` re-arm gate 期間持續餵 L1 以偵測 release。config 新增 `vad.retrigger_lockout_ms` / `vad.rearm_max_wait_ms`（省略＝預設值）；`vad_cooldown` 正名為 `rms_log_throttle`。`EnergyVAD` / `VoiceVAD` 內部零變更。
+- **e2e 擴充至 20 tests**：新增單句恰 1 次 CHAT / 雙句恰 2 次 CHAT / 純 L0 重複抑制三支 E2E 測試。全套件回歸通過（voice_vad 10 / voice_pipeline_e2e 20 / voice_bubble 5 / speech_bubble 4）。
 
 ## [0.3.0] - 2026-08-22
 
