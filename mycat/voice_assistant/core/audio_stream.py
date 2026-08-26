@@ -22,13 +22,15 @@ class AudioStreamManager:
         max_chunks = int((buffer_seconds * 1000) / chunk_duration_ms)
 
         self.ring_buffer = collections.deque(maxlen=max_chunks)
+        self._buffer_lock = threading.Lock()
         self.p = None
         self.stream = None
         self._is_running = False
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
         audio_chunk = np.frombuffer(in_data, dtype=np.int16)
-        self.ring_buffer.append(audio_chunk)
+        with self._buffer_lock:
+            self.ring_buffer.append(audio_chunk)
         return (None, pyaudio.paContinue)
 
     def start(self):
@@ -63,19 +65,28 @@ class AudioStreamManager:
 
     def get_buffered_audio(self) -> np.ndarray:
         """Concatenates all audio chunks in the ring buffer into a 1D NumPy array."""
-        if len(self.ring_buffer) == 0:
-            return np.array([], dtype=np.int16)
-        return np.concatenate(list(self.ring_buffer))
+        with self._buffer_lock:
+            if len(self.ring_buffer) == 0:
+                return np.array([], dtype=np.int16)
+            chunks = list(self.ring_buffer)
+        return np.concatenate(chunks)
 
     def get_recent_chunk(self, duration_sec: float = 0.1) -> np.ndarray:
         """Returns the most recent chunk of audio (default 0.1 seconds)."""
         num_samples = int(self.sample_rate * duration_sec)
-        if len(self.ring_buffer) == 0:
-            return np.array([], dtype=np.int16)
-        recent_chunks = list(self.ring_buffer)[-num_samples:]
-        if not recent_chunks:
-            return np.array([], dtype=np.int16)
-        return np.concatenate(recent_chunks)
+        with self._buffer_lock:
+            if len(self.ring_buffer) == 0:
+                return np.array([], dtype=np.int16)
+            recent_chunks = list(self.ring_buffer)[-num_samples:]
+            if not recent_chunks:
+                return np.array([], dtype=np.int16)
+            chunks = recent_chunks
+        return np.concatenate(chunks)
+
+    def clear_buffer(self) -> None:
+        """Clears the ring buffer. Thread-safe with feed thread."""
+        with self._buffer_lock:
+            self.ring_buffer.clear()
 
     @staticmethod
     def list_devices() -> list[dict]:

@@ -2,9 +2,9 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/08/22"
-project_version: "0.3.0"
-document_version: "1.6.0"
+modified_date: "2026/08/26"
+project_version: "0.3.1"
+document_version: "1.7.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -432,3 +432,18 @@ agent_sign: ['human/mimas', 'opencode/current']
   * fixtures 判別比不可用整檔 median 表徵（pos 檔靜音填充稀釋 median 近 25 倍）；判別結構是「爆發峰值 vs 穩態噪聲」，須行為判決或 p90。
   * WAV 注入「凍結尾端」病理：`asr.load()` 阻塞於輪詢前，短 fixture 提前播完、ring buffer 凍在檔尾靜音，舊 e2e 依賴退化行為通過；`start_delayed`/`resume()` 閘門修復（詳 CHANGELOG 0.3.0）。
 * **升級路徑**：esp-miao edge 端 C 實作同步 Blackman 修正與 k_on=2.25 校準值（遠程作業）；滑動窗口重複轉錄缺口另立 Task 處理。
+
+### [功能實作] 觸發後重複轉錄抑制 (TASK-3d Retrigger Suppression)
+* **日期**：2026-08-26
+* **問題描述**：
+  單句語音觸發 ASR 後，consumer loop 繼續以 100ms 輪詢同一滑動緩衝區，VAD 在語音結束前持續通過 → 重複轉錄。實測一句 "hey miaomiao" 會產生 3 次 CHAT 意圖，觸發 LLM 重複呼叫與氣泡排隊。
+* **方案取捨**：
+  * **方案 A (lockout 純計時)**：意圖 emit 後鎖定 N 毫秒。問題：若使用者語速慢（lockout 結束仍在說話），第二句開頭被吞。
+  * **方案 B (lockout + L1 release + cap 三條件)**：lockout 到期 AND (L1 released OR cap 到期)。兼顧：語速快不誤吞、L1 持續偵測不盲鎖、cap 保證最壞情況有上限。最終採用此方案 (PLAN-3d §2)。
+* **實作偏離**：
+  * re-arm gate 需持續餵 L1 audio，否則 `voice_vad.speaking` 永不更新（不會偵測到 release），cap 會成為唯一 re-arm 路徑。修正：在 rearm `continue` 前先呼叫 `voice_vad.is_speech(recent_chunk)`。
+  * `vad_cooldown` 變數名不副實（只節流 RMS log，與觸發節流無關），正名為 `rms_log_throttle`。
+* **關鍵設計**：
+  * `AudioStreamManager.clear_buffer()` + `_buffer_lock`（`threading.Lock`）：意圖 emit 後清空 ring buffer，確保 re-arm 後的第一次 VAD 檢測拿到新語音。
+  * config 新增 `vad.retrigger_lockout_ms`（預設 1500）+ `vad.rearm_max_wait_ms`（預設 10000），省略＝預設值語義。
+* **驗證**：WAV fixture 單句恰 1 次 CHAT；雙句（1s gap）恰 2 次 CHAT；純 L0 模式 lockout 仍生效；39 支既有測試零回歸。

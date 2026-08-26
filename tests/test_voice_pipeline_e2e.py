@@ -14,6 +14,7 @@ ESP32 fixture recordings (production's 21000 targets the desktop mic gain).
 import os
 import time
 
+import numpy as np
 import pytest
 
 from mycat.voice_assistant.core.intent_parser import parse_text_to_intent
@@ -295,3 +296,131 @@ def test_user_recording_distant_speech_reaches_intent(qapp, monkeypatch, fixture
 def test_user_recording_nonvoice_stays_silent(qapp, monkeypatch, fixture):
     events = _run_real_pipeline(qapp, monkeypatch, fixture)
     assert events["intents"] == [], f"'{fixture}' falsely triggered: {events['intents']}"
+
+
+# ── TASK-3d: retrigger suppression e2e ───────────────────────────
+
+
+def _build_two_utterance_wav(src_wav, gap_sec, out_path, sample_rate=16000):
+    """Concatenate src_wav twice with gap_sec silence in between."""
+    import struct
+    import wave
+
+    with wave.open(src_wav) as w:
+        raw = w.readframes(w.getnframes())
+        src_rate = w.getframerate()
+    samples = np.frombuffer(raw, dtype=np.int16)
+    if src_rate != sample_rate:
+        import numpy as _np
+        n = int(len(samples) * sample_rate / src_rate)
+        samples = _np.interp(
+            _np.linspace(0, len(samples) - 1, n),
+            _np.arange(len(samples)),
+            samples.astype(_np.float64),
+        ).astype(np.int16)
+    gap_samples = int(sample_rate * gap_sec)
+    silence = np.zeros(gap_samples, dtype=np.int16)
+    combined = np.concatenate([samples, silence, samples])
+    with wave.open(out_path, "w") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(combined.tobytes())
+
+
+def test_single_utterance_exactly_one_chat(qapp, monkeypatch, tmp_path):
+    """TASK-3d: one utterance → exactly 1 CHAT (no retrigger)."""
+    from mycat.voice_assistant.voice_worker import VoiceWorker
+
+    monkeypatch.setenv("MYCAT_AUDIO_WAV", os.path.join(FIXTURES, "pos_heymiaomiao_n.wav"))
+    worker = VoiceWorker(config_path=TEST_CONFIG)
+    events = {"intents": [], "asr_status": []}
+    worker.intent_detected_signal.connect(events["intents"].append)
+    worker.asr_status_signal.connect(events["asr_status"].append)
+    worker.start()
+    try:
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.05)
+            if "ASR_READY" in events["asr_status"]:
+                break
+        assert "ASR_READY" in events["asr_status"]
+        # Wait for fixture to finish + extra margin
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.05)
+        chats = [i for i in events["intents"] if i.get("type") == "CHAT"]
+        assert len(chats) == 1, f"expected exactly 1 CHAT, got {len(chats)}: {chats}"
+    finally:
+        worker.stop()
+
+
+def test_two_utterances_exactly_two_chats(qapp, monkeypatch, tmp_path):
+    """TASK-3d: two utterances ~1s apart → exactly 2 CHATs."""
+    from mycat.voice_assistant.voice_worker import VoiceWorker
+
+    two_utt_wav = str(tmp_path / "two_utt.wav")
+    _build_two_utterance_wav(
+        os.path.join(FIXTURES, "pos_heymiaomiao_n.wav"), 1.0, two_utt_wav
+    )
+    monkeypatch.setenv("MYCAT_AUDIO_WAV", two_utt_wav)
+    worker = VoiceWorker(config_path=TEST_CONFIG)
+    events = {"intents": [], "asr_status": []}
+    worker.intent_detected_signal.connect(events["intents"].append)
+    worker.asr_status_signal.connect(events["asr_status"].append)
+    worker.start()
+    try:
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.05)
+            if "ASR_READY" in events["asr_status"]:
+                break
+        assert "ASR_READY" in events["asr_status"]
+        # Two utterances in ~7s file; wait generously
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.05)
+        chats = [i for i in events["intents"] if i.get("type") == "CHAT"]
+        assert len(chats) == 2, f"expected exactly 2 CHATs, got {len(chats)}: {chats}"
+    finally:
+        worker.stop()
+
+
+def test_pure_l0_retrigger_suppression(qapp, monkeypatch, tmp_path):
+    """TASK-3d: without voice: section (pure L0) lockout still prevents retrigger."""
+    import yaml
+
+    from mycat.voice_assistant.voice_worker import VoiceWorker
+
+    with open(TEST_CONFIG) as f:
+        cfg = yaml.safe_load(f)
+    del cfg["vad"]["voice"]
+    legacy_path = tmp_path / "config_no_voice.yaml"
+    legacy_path.write_text(yaml.safe_dump(cfg))
+
+    monkeypatch.setenv("MYCAT_AUDIO_WAV", os.path.join(FIXTURES, "pos_heymiaomiao_n.wav"))
+    worker = VoiceWorker(config_path=str(legacy_path))
+    events = {"intents": [], "asr_status": []}
+    worker.intent_detected_signal.connect(events["intents"].append)
+    worker.asr_status_signal.connect(events["asr_status"].append)
+    worker.start()
+    try:
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.05)
+            if "ASR_READY" in events["asr_status"]:
+                break
+        assert "ASR_READY" in events["asr_status"]
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.05)
+        chats = [i for i in events["intents"] if i.get("type") == "CHAT"]
+        assert len(chats) == 1, f"pure L0: expected 1 CHAT, got {len(chats)}"
+    finally:
+        worker.stop()
