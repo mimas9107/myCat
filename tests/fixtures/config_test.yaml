@@ -16,6 +16,8 @@ audio:
 
 vad:
   threshold: 2000.0
+  retrigger_lockout_ms: 1500
+  rearm_max_wait_ms: 10000
   # Same Layer 1 section as production; SNR gates are relative so the ESP32
   # fixtures need no re-calibration (unlike the absolute L0 threshold above).
   voice:

@@ -82,6 +82,13 @@ class VoiceWorker(QThread):
             )
         self._voice_vad_active = self.voice_vad is not None
 
+        # Retrigger suppression (PLAN-3d): lockout + L1 release wait + cap
+        self._retrigger_lockout_ms = vad_cfg.get("retrigger_lockout_ms", 1500)
+        self._rearm_max_wait_ms = vad_cfg.get("rearm_max_wait_ms", 10000)
+        self._rearm_lockout_until = 0.0
+        self._last_trigger_time = 0.0
+        self._rearming = False
+
         self._ww_enabled = ww_cfg.get("enabled", False)
         self.wake_word = None
         if self._ww_enabled:
@@ -126,25 +133,50 @@ class VoiceWorker(QThread):
         if callable(resume):
             resume()
 
-        vad_cooldown = 0.0
+        rms_log_throttle = 0.0
         while self._is_running:
             time.sleep(0.1)
+            now = time.time()
+
             audio_buffer = self.audio_stream.get_buffered_audio()
             if len(audio_buffer) == 0:
                 continue
 
-            now = time.time()
-            if now - vad_cooldown > 2.0:
+            # RMS logging throttle (previously vad_cooldown, misnamed; only throttles [vad] RMS log)
+            if now - rms_log_throttle > 2.0:
                 recent_chunk = self.audio_stream.get_recent_chunk(0.1)
                 if len(recent_chunk) > 0:
                     energy = self.vad.get_energy(recent_chunk)
                     self.vad_energy_signal.emit(energy)
                     logger.info("[vad] RMS=%.0f (threshold=%.0f)", energy, self.vad_threshold)
-                vad_cooldown = now
+                rms_log_throttle = now
 
+            # Re-arm gate: skip ASR trigger while re-arming, but keep feeding L1
+            # so its adaptive floor and speaking state stay current.
             recent_chunk = self.audio_stream.get_recent_chunk(0.1)
             if len(recent_chunk) == 0:
                 continue
+
+            if self._rearming:
+                # Feed L1 during re-arm so it can detect speech release
+                if self._voice_vad_active:
+                    try:
+                        self.voice_vad.is_speech(recent_chunk)
+                    except Exception:
+                        pass
+
+                lockout_expired = now * 1000 >= self._rearm_lockout_until
+                l1_released = True
+                if self._voice_vad_active:
+                    l1_released = not self.voice_vad.speaking
+                cap_expired = (now * 1000 - self._last_trigger_time) >= self._rearm_max_wait_ms
+
+                if lockout_expired and (l1_released or cap_expired):
+                    self._rearming = False
+                    logger.info("[rearm] armed again (lockout=%s l1_released=%s cap=%s)",
+                                lockout_expired, l1_released, cap_expired)
+                else:
+                    continue  # still re-arming, skip L0 check
 
             # Layer 1 is fed every chunk so its adaptive floor keeps tracking
             # ambient even when Layer 0 would reject; trigger = L0 AND L1.
@@ -198,6 +230,14 @@ class VoiceWorker(QThread):
                     self.asr.unload()
                     self._asr_status = self.ASR_UNLOADED
                     self.asr_status_signal.emit(self._asr_status)
+
+                # Retrigger suppression: clear buffer + enter re-arm
+                self.audio_stream.clear_buffer()
+                self._rearming = True
+                self._last_trigger_time = now * 1000
+                self._rearm_lockout_until = self._last_trigger_time + self._retrigger_lockout_ms
+                logger.info("[rearm] entered (lockout_until=%.0f max_wait_until=%.0f)",
+                            self._rearm_lockout_until, self._last_trigger_time + self._rearm_max_wait_ms)
             else:
                 logger.info("[asr] returned empty text")
 
