@@ -2,9 +2,9 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/08/26"
+modified_date: "2026/10/01"
 project_version: "0.3.1"
-document_version: "1.7.0"
+document_version: "1.8.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -447,3 +447,25 @@ agent_sign: ['human/mimas', 'opencode/current']
   * `AudioStreamManager.clear_buffer()` + `_buffer_lock`（`threading.Lock`）：意圖 emit 後清空 ring buffer，確保 re-arm 後的第一次 VAD 檢測拿到新語音。
   * config 新增 `vad.retrigger_lockout_ms`（預設 1500）+ `vad.rearm_max_wait_ms`（預設 10000），省略＝預設值語義。
 * **驗證**：WAV fixture 單句恰 1 次 CHAT；雙句（1s gap）恰 2 次 CHAT；純 L0 模式 lockout 仍生效；39 支既有測試零回歸。
+
+### [除錯與驗證] 語音分支 rebase onto main：版本衝突與測試基線判讀
+* **日期**：2026-10-01
+* **情境**：上游作者將 main 主線資料 sync 回 origin，本地切 main pull 後再切回 `feature/vadwakewords-1`，需 rebase onto main。分岔點 `8dd582a`，語音側領先 38 commits、main 側領先 32 commits。
+* **操作**：`git rebase --onto main 8dd582a feature/vadwakewords-1`（不用 `git rebase main`，因需明確指定分岔點）。事前先開 `backup/vadwakewords-pre-rebase-20261001` 保全原狀。
+* **衝突只有一處**：重疊檔案經比對為 `CHANGELOG.md`、`README.md`、`mycat/main.py`、`pyproject.toml` 四個，前三者由 git 自動合併成功；唯一人工介入是 `pyproject.toml` 的 `version`（main=`0.1.36` vs 分支=`0.2.0`）。
+* **版本欄位解決原則——採 theirs 而非 ours**：
+  * 兩條版本序列各自獨立前進：main 走 AppImage/deb/AppStream 發布線（0.1.32→0.1.36），語音分支走功能線（0.2.0→0.3.1），分岔時同為 0.1.31。
+  * 採 `git checkout --theirs pyproject.toml` 保留分支側版本，讓後續 bump commit 繼續推到 0.3.1；若採 ours，會被 main 的 0.1.36 拖低，且與分支的 CHANGELOG/SPEC/MEMOIR frontmatter `project_version` 不一致。
+  * 通用教訓：**並進的版本欄位衝突，取「本分支的功能序列」而非「對方的發布序列」**，前提是兩者分岔後未曾互相 merge 回來；若曾 merge，必須改為取 max 並補 CHANGELOG 條目。
+* **rebase 後完整性驗證**（比單看 `git status` 有效）：
+  1. `git diff --stat <backup> feature/vadwakewords-1` — 若輸出恰好等於 main 側的增量檔案清單（本次為 9 個：workflows、metainfo、docs/ACTIVITY.md、docs/screenshot.png、tests/test_activity.py 等，+159/-17），即證明分支自身內容未被 rebase 污染。
+  2. 全庫掃描 conflict marker（`<<<<<<<`/`=======`/`>>>>>>>`）。
+  3. 逐一確認 main 側關鍵改動存活：本次檢查 `mycat/main.py` 的 `QtCore.QTimer.singleShot(15000, ...)`（首啟 autostart 延遲 15 秒）仍在，以及 CHANGELOG 開頭的 0.1.32~0.1.36 條目未被覆蓋。
+* **測試基線判讀的教訓（本次踩到）**：
+  * 執行指令必須用專案 venv：`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q --forked --timeout=60 --timeout-method=thread`。系統 `python3` 無 pytest；`uv run pytest` 在此專案會逾時。
+  * **「失敗是既有問題」的結論必須用同一測試組合複驗才成立**。本次 `test_pure_l0_retrigger_suppression` 在 rebase 前分支以 `test_calendar_ics + test_voice_pipeline_e2e` 兩檔組合跑時 PASSED，但在 `test_voice_pipeline_e2e.py` 單檔全跑時 FAILED——兩者皆與 rebase 無關，差異來自測試順序與共享狀態（whisper model 載入、fork、`tmp_path`）。**單獨跑單一測試、或用不同檔案組合跑，都不足以建立基線**。
+  * 判定既有失敗的正確做法：切一個 rebase 前的 worktree（`git worktree add /tmp/... <backup>`），在**完全相同的測試組合**下跑一次比對。worktree 內需用主目錄的 venv 直徑執行。
+* **本次既有失敗（非本次 rebase 造成）**：
+  * `tests/test_calendar_ics.py` 3 支：`ModuleNotFoundError: No module named 'icalendar'`，環境未裝 `mycat[calendar]` extras，屬環境問題非程式問題。
+  * `tests/test_voice_pipeline_e2e.py::test_pure_l0_retrigger_suppression`：期望 1 次 CHAT 實際 2 次（WAV 注入下 VAD 重複觸發）。單檔全跑與單測跑皆重現於 rebase 前後兩側。**待修**：純 L0（無 `vad.voice` 雙層閘門）模式下 lockout 對 re-arm 路徑的抑制力不足，第二次 CHAT 來自 fixture 尾段的 `'i'm here.'`。
+* **備註**：`git config rerere.enabled true` 已在本地開啟，若同一衝突日後重現可自動套用上次的解法。
