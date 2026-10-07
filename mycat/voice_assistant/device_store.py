@@ -2,6 +2,8 @@ import json
 import logging
 from pathlib import Path
 
+from .. import secret_store
+
 logger = logging.getLogger(__name__)
 
 _CONFIG_FILENAME = "voice_device.json"
@@ -34,6 +36,7 @@ def save_device_index(device_index: int | None) -> bool:
         data = {"device_index": device_index}
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        secret_store.secure_file(config_path)
         logger.info("Saved voice device_index=%s", device_index)
         return True
     except OSError as e:

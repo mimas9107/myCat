@@ -2,9 +2,9 @@
 name: "MEMOIR.md"
 description: "開發回憶錄與問題解法"
 created_date: "2026/07/10"
-modified_date: "2026/08/26"
+modified_date: "2026/10/07"
 project_version: "0.3.1"
-document_version: "1.7.0"
+document_version: "1.8.0"
 agent_sign: ['human/mimas', 'opencode/current']
 ---
 
@@ -447,3 +447,16 @@ agent_sign: ['human/mimas', 'opencode/current']
   * `AudioStreamManager.clear_buffer()` + `_buffer_lock`（`threading.Lock`）：意圖 emit 後清空 ring buffer，確保 re-arm 後的第一次 VAD 檢測拿到新語音。
   * config 新增 `vad.retrigger_lockout_ms`（預設 1500）+ `vad.rearm_max_wait_ms`（預設 10000），省略＝預設值語義。
 * **驗證**：WAV fixture 單句恰 1 次 CHAT；雙句（1s gap）恰 2 次 CHAT；純 L0 模式 lockout 仍生效；39 支既有測試零回歸。
+
+### [協作流程] Rebase 上游 58 commits：4 處衝突解法與上游新守則反噬
+* **日期**：2026-10-07
+* **問題描述**：
+  main 與原作者 repo 同步（新增 58 commits，tip `286e167`），`feature/vadwakewords-1` 的 38 個 commit 需 rebase 其上。觸發 4 處衝突。
+* **衝突解法**：
+  1. **`AGENTS.md`（add/add）**：上游把 AI 指引改為指向 `CLAUDE.md` 的 7 行指標檔，本分支放語音協作規範 → **兩邊都留**（上游指標在前、分支規範另起 `# AI Agent 協作指南 (voice enhancement)`），符合「衝突解法恆為兩邊都留」守則。
+  2. **`speech_bubble.py` 的 `PAD_X` / setMask**：上游 a8b1f51 改 `PAD_X=30` 並以 `QPainterPathStroker` 加寬 mask，本分支從未主動改動（只是 base 值 10 被上下文波及）→ **取上游**。判準：非本分支主動語意的衝突一律取上游。
+  3. **`speech_bubble.py` 所有權還原 commit (f2ddab5)**：diff 證明該 commit 終態 == base 原版（意圖＝清空分支痕跡）→ 直接 `git show main:mycat/speech_bubble.py` 覆寫，SpeechBubble 類別已在 `voice_bubble.py`。**「還原類」commit 衝突時取上游終態，不要逐行手工合**。
+  4. **`pyproject.toml` version**：上游 0.1.37 vs 分支 0.2.0 → 取分支（分支自有版本線，後續已 bump 0.3.1）。
+* **上游新守則反噬（rebase 後才暴露）**：
+  上游 0.1.37 新增 `tests/test_private_files_are_owner_only.py`（AST 掃描所有 `open(<cfg>, "w")` 且 6 行窗內無 `secure_file` 即 fail），抓到本分支 `voice_assistant/device_store.py` 寫 `voice_device.json` 未鎖權限。修法：`from .. import secret_store` + 寫入後 `secret_store.secure_file(config_path)`，實測檔案變 0600。**教訓：fork 分支新增的 config 寫入者，在上游引入全域掃描測試時會集中爆雷，rebase 後必跑全測。**
+* **驗證**：`pytest -q --forked` 353 passed；3 failed 為既有 `icalendar` 缺模組，1 failed 為 `test_two_utterances_exactly_two_chats` 單獨跑 20/20 全過的 load flaky。ruff 無新增違規（`main.py:955` E501 為既有）。
