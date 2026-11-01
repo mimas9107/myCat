@@ -33,3 +33,6 @@ CLAUDE.local.md
 # Un-ignore the directory so we can whitelist *.md inside it
 vendors/*
 !vendors/*.md
+
+# agentmemory MCP local store (opencode), never committed
+/data/
